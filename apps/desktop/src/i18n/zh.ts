@@ -1,0 +1,326 @@
+/** Chinese (default) message catalog */
+const zh = {
+    // --- Navigation ---
+    nav: {
+        sessions: '会话',
+        skills: '技能',
+        runbooks: '运行手册',
+        settings: '设置',
+        recent: '最近',
+        sidebar: '侧边栏',
+        breadcrumb: '面包屑导航',
+        recentSessions: '最近会话',
+        deleteSession: '删除会话',
+    },
+
+    // --- Header ---
+    header: {
+        brand: 'AlderCowork',
+    },
+
+    // --- Chat ---
+    chat: {
+        composePlaceholder: '输入消息… ⏎ 发送',
+        composeHint: '⏎ 发送，Shift+⏎ 换行',
+        composeDisclaimer: 'AlderCowork 可能会出错，请核实重要信息。',
+        newSession: '新会话',
+        engineNotReady: '引擎尚未就绪，请等待启动完成。',
+        streamInterrupted: '流式传输中断，请重试。',
+        emptyTitle: '有什么可以帮你的？',
+        emptyDesc: '发送一条消息以开始新的会话。',
+        thinking: 'AlderCowork 正在思考…',
+        statusStarting: '正在启动引擎…',
+        statusError: '引擎启动失败，请重启应用。',
+        statusStopped: '内核已停止。',
+        sendLabel: '发送',
+        authorUser: '你',
+        authorAssistant: 'AlderCowork',
+        // Keys used by ChatView.vue
+        empty: {
+            title: '有什么我可以帮你的？',
+            desc: '随便问点什么，或者使用 @ 提及文件、代码或上下文。',
+            starting: '正在启动引擎…',
+            error: '引擎启动失败，请重启应用。',
+            stopped: '内核已停止。',
+        },
+        attachFile: '添加附件',
+        streaming: 'AlderCowork 正在思考…',
+        cancelStream: '停止生成',
+        placeholder: '输入消息… ⏎ 发送',
+        hint: 'AlderCowork 可能会出错，请核实重要信息。',
+        send: '发送',
+        permission: {
+            requestTitle: '工具请求权限',
+            permission: '权限',
+            type: '类型',
+            pattern: '匹配范围',
+            hint: '点击“确定”允许一次，点击“取消”拒绝。',
+        },
+        tools: {
+            statusPending: '排队中',
+            statusRunning: '执行中',
+            statusCompleted: '已完成',
+            statusFailed: '失败',
+            showDetails: '展开详情',
+            hideDetails: '收起详情',
+            input: '输入',
+            output: '输出',
+            waitingOutput: '等待实时输出…',
+            noOutput: '无输出',
+        },
+        modelPicker: {
+            title: '切换模型',
+            selectModel: '选择模型',
+            loading: '正在加载供应商…',
+            loadError: '无法加载供应商',
+            noProviders: '无已连接的供应商',
+            defaultBadge: '默认',
+        },
+        reasoning: {
+            title: '思考过程',
+        },
+        file: {
+            unnamed: '未命名文件',
+            image: '图片',
+            generic: '文件',
+            download: '下载文件',
+            remove: '移除附件',
+        },
+        attachments: {
+            unsupportedFile: '该文件类型暂不支持作为附件。',
+            fileTooLarge: '单个附件超出大小限制',
+            maxFilesReached: '附件数量已达上限',
+            maxImagesReached: '图片附件数量已达上限',
+            maxTotalSizeReached: '附件总大小已达上限',
+            readFailed: '读取附件失败，请重试。',
+        },
+        tokens: {
+            input: '输入 Token',
+            output: '输出 Token',
+            cache: '缓存命中',
+            reasoning: '推理 Token',
+        },
+        patch: {
+            filesChanged: '{count} 个文件变更',
+        },
+        retry: {
+            label: '第 {attempt} 次重试',
+        },
+        unknownPart: {
+            label: '未渲染事件',
+            description: '该 Part 类型暂未可视化，已保留类型标记以避免静默丢失。',
+        },
+    },
+
+    // --- Skills ---
+    skills: {
+        search: '搜索技能…',
+        permissions: '权限',
+        noSkills: '暂无技能',
+        noSkillsInstalled: '尚未安装任何技能。点击上方按钮导入。',
+        scanning: '正在扫描技能目录…',
+        panelTitle: '技能面板',
+        panelSubtitle: '在执行前检查清单权限、触发器和激活风险。',
+        searchLabel: '搜索技能',
+        searchPlaceholder: '按名称过滤，例如 deploy',
+        resultCount: '{count} 个技能',
+        noMatch: '没有匹配当前搜索关键词的技能。',
+        selectPrompt: '请选择一个技能查看详情。',
+        listLabel: '技能列表',
+        detailLabel: '技能详情',
+        searchNoResults: '未找到匹配的技能。',
+        clearSearch: '清除搜索',
+        removeConfirm: '确定要移除技能 {name} 吗？此操作不可撤销。',
+        activation: {
+            global: '全局',
+            workspace: '工作区',
+            globalActive: '已全局激活',
+            workspaceActive: '已在当前工作区激活',
+            bothActive: '已全局 + 工作区激活',
+            inactive: '未激活',
+            activated: '技能已激活',
+            deactivated: '技能已停用',
+        },
+        detail: {
+            noPreview: '未提供 SKILL.md 预览，可在 manifest 派生元数据中补充简要摘要。',
+            sectionDescription: '描述',
+            sectionPermissions: '权限',
+            sectionTriggers: '触发器',
+            sectionCompat: '兼容',
+            emptyPermissions: '未声明显式权限。',
+            emptyTriggers: '未配置触发关键词。',
+            inspectAction: '查看详情',
+            removeAction: '移除技能',
+        },
+        import: {
+            title: '导入技能',
+            subtitle: '从压缩包或 Git 仓库导入技能到本地。',
+            action: '导入技能',
+            tabArchive: '压缩包',
+            tabGit: 'Git 仓库',
+            archiveHint: '选择 .zip、.tar.gz 或 .tgz 格式的技能压缩包。压缩包内需包含 SKILL.md 文件。',
+            selectFile: '选择文件',
+            importing: '导入中…',
+            gitHint: '输入 Git 仓库地址（https:// 或 git@），将执行浅克隆。',
+            gitUrlLabel: '仓库地址',
+            gitUrlPlaceholder: 'https://github.com/user/my-skill.git',
+            clone: '克隆导入',
+            cloning: '克隆中…',
+            successArchive: '技能 {name} 已从压缩包导入。',
+            successGit: '技能 {name} 已从 Git 仓库导入。',
+            removed: '技能 {name} 已移除。',
+        },
+        overlay: {
+            title: '激活技能确认',
+            toolsToCall: '将调用的工具',
+            noToolCalls: '无外部工具调用。',
+            sectionPermissions: '权限',
+            emptyPermissions: 'Manifest 未声明权限。',
+            sectionRisk: '风险等级',
+            risk: {
+                high: '高',
+                medium: '中',
+                info: '提示',
+                low: '低',
+                highHint: '完整 Shell 权限可能执行任意命令。',
+                mediumHint: '可写文件系统或 Shell 权限需要显式审查。',
+                infoHint: '网络访问会记录在运行时审计日志中。',
+                lowHint: '仅包含只读操作。',
+            },
+            cancel: '取消',
+            confirm: '确认激活',
+        },
+    },
+
+    // --- Runbooks ---
+    runbooks: {
+        title: '运行手册',
+        emptyDesc: '已固化的工作流将在此显示。',
+    },
+
+    // --- Settings ---
+    settings: {
+        title: '设置',
+        settingsShortcut: '设置 (⌘,)',
+        tabs: {
+            providers: '供应商',
+            engine: '引擎',
+            theme: '外观',
+            shortcuts: '快捷键',
+            about: '关于',
+        },
+        providers: {
+            title: 'AI 模型供应商',
+            desc: '配置你的 AI 服务供应商。至少需要配置一个供应商才能开始对话。',
+            connected: '已连接',
+            notConfigured: '未配置',
+            default: '默认',
+            setDefault: '设为默认',
+            setKey: '设置 API Key',
+            editKey: '编辑',
+            removeKey: '移除',
+            optional: '可选',
+        },
+        engine: {
+            title: 'AI 引擎',
+            provider: '模型供应商',
+            envVar: '环境变量',
+            status: '状态',
+            version: '版本',
+            activeProviders: '已激活供应商',
+            restart: '重启引擎',
+            restarting: '重启中…',
+            statusLabels: {
+                stopped: '离线',
+                starting: '启动中…',
+                running: '已连接',
+                error: '错误',
+            },
+        },
+        theme: {
+            title: '外观',
+            mode: '主题模式',
+            dark: '深色',
+            light: '浅色',
+            system: '跟随系统',
+            language: '系统语言',
+        },
+        shortcuts: {
+            title: '快捷键',
+            desc: '全局键盘快捷方式',
+            keys: {
+                send: '发送消息',
+                sessions: '切换到会话',
+                skills: '切换到技能',
+                runbooks: '切换到运行手册',
+                settings: '打开设置',
+                newSession: '新建会话',
+                toggleTheme: '切换主题',
+            },
+        },
+        about: {
+            title: '关于',
+            appName: 'AlderCowork',
+            tagline: '你的 AI 团队协作伙伴',
+            desc: '基于 OpenCode 内核构建的团队 AI 技能运行时',
+            kernelVersion: '内核版本',
+            appVersion: '应用版本',
+            license: '开源协议',
+        },
+    },
+
+    // --- Welcome / Onboarding ---
+    welcome: {
+        title: '欢迎使用 AlderCowork',
+        subtitle: '你的 AI 编程协作伙伴',
+        chooseProvider: '选择 AI 供应商',
+        chooseProviderDesc: '选择你想使用的 AI 服务，我们将引导你完成配置。',
+        moreProviders: '更多供应商',
+        enterApiKey: '输入你的 API Key 以连接服务。',
+        apiKeyLabel: 'API Key',
+        apiKeyRequired: '请输入 API Key',
+        getStarted: '开始使用 →',
+        skipForNow: '稍后配置',
+        back: '返回',
+
+    },
+
+    // --- Kernel Status ---
+    kernel: {
+        offline: '离线',
+        starting: '启动中…',
+        connected: '已连接',
+        error: '错误',
+    },
+
+    // --- Common ---
+    common: {
+        save: '保存',
+        cancel: '取消',
+        close: '关闭',
+        confirm: '确认',
+        loading: '加载中…',
+        clear: '清除',
+    },
+
+    commandPalette: {
+        title: '命令面板',
+        searchLabel: '搜索命令',
+        searchPlaceholder: '搜索命令…（Cmd+K 关闭）',
+        empty: '未找到命令',
+    },
+
+    // --- Workspace ---
+    workspace: {
+        recent: '最近项目',
+        openFolder: '打开项目文件夹',
+        remove: '移除',
+        defaultLabel: '工作区',
+    },
+} as const
+
+/** Recursive message tree type — values are strings, structure matches across locales */
+export type MessageNode = string | { [key: string]: MessageNode }
+export type MessageSchema = { [key: string]: MessageNode }
+
+export default zh as MessageSchema

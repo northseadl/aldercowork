@@ -1,0 +1,3 @@
+# Bundled kernel binaries (downloaded by scripts/download-kernel.sh)
+opencode-*
+!.gitignore

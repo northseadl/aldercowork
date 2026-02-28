@@ -1,0 +1,8 @@
+{
+  "name": "aldercowork",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -F @aldercowork/desktop dev",
+    "build": "pnpm -F @aldercowork/desktop build"
+  }
+}

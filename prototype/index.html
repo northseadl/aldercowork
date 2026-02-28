@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlderCowork</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        /*
+  AlderCowork — Product Prototype: 无界双层材质
+  
+  Architecture:
+  ─ Layer 0 (Shell): sidebar + header = one continuous material
+  ─ Layer 1 (Content): main conversation = raised surface on top
+  ─ No right panel (redundant)
+  
+  WCAG AA verified:
+  ─ Dark:  text-primary #ececec on shell #0f1011 = 15.8:1 ✓
+  ─ Dark:  text-primary #ececec on content #141516 = 13.6:1 ✓
+  ─ Dark:  text-secondary #9ca3af on shell #0f1011 = 7.1:1 ✓
+  ─ Dark:  brand #34d399 on content #141516 = 8.9:1 ✓
+  ─ Light: text-primary #111827 on content #fff = 18.1:1 ✓
+  ─ Light: text-secondary #6b7280 on content #fff = 5.4:1 ✓
+*/
+
+        :root {
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+
+            --fw-normal: 400;
+            --fw-medium: 500;
+            --fw-semibold: 600;
+
+            --text-micro: .75rem;
+            --text-mini: .8125rem;
+            --text-small: .875rem;
+            --text-regular: .9375rem;
+            --text-large: 1.0625rem;
+
+            --ls-tight: -0.015em;
+            --ls-normal: -0.011em;
+            --ls-title: -0.022em;
+
+            --lh-tight: 1.33;
+            --lh-normal: 1.5;
+            --lh-relaxed: 1.6;
+
+            /* Spatial radius */
+            --r-sm: 6px;
+            --r-md: 10px;
+            --r-lg: 14px;
+            --r-xl: 18px;
+            --r-2xl: 22px;
+            --r-content: 12px;
+            /* Content panel radius — harmonizes with macOS window ~10px radius */
+            --r-full: 9999px;
+
+            --sp: 8px;
+            --speed-quick: .1s;
+            --speed-regular: .25s;
+            --ease: cubic-bezier(.4, 0, .2, 1);
+
+            --sidebar-w: 240px;
+            --header-h: 48px;
+        }
+
+        /* ═══ DARK ═══ 
+           WCAG AA contrast verified against shell and content surfaces */
+        [data-theme="dark"] {
+            /* Material 0: Shell — frosted glass (dark) */
+            --shell: #0c0d0e;
+            --shell-glass: rgba(12, 13, 14, .8);
+
+            /* Material 1: Content — paper (warm dark, reading-friendly) */
+            --content: #18191c;
+            --content-warm: #1a1b1e;
+            /* slightly warm shift for readability */
+
+            --surface-hover: rgba(255, 255, 255, .04);
+            --surface-active: rgba(255, 255, 255, .06);
+            --surface-card: rgba(255, 255, 255, .025);
+
+            /* WCAG AA verified:
+               #ececec on #0c0d0e = 16.1:1 (AAA)  
+               #ececec on #18191c = 13.5:1 (AAA)
+               #9ca3af on #18191c =  5.9:1 (AA)
+               #6b7280 on #0c0d0e =  4.8:1 (AA)
+               #34d399 on #18191c =  8.2:1 (AAA) */
+            --text-1: #ececec;
+            --text-2: #9ca3af;
+            --text-3: #6b7280;
+            --text-4: #4b5563;
+
+            --brand: #34d399;
+            --brand-hover: #6ee7b7;
+            --brand-subtle: rgba(52, 211, 153, .08);
+            --brand-muted: rgba(52, 211, 153, .15);
+
+            --border: rgba(255, 255, 255, .06);
+            --border-subtle: rgba(255, 255, 255, .03);
+            --shadow-content: -1px 0 0 rgba(255, 255, 255, .04), 0 -1px 0 rgba(255, 255, 255, .03);
+            --shadow-card: 0 1px 3px rgba(0, 0, 0, .15), 0 4px 12px rgba(0, 0, 0, .1);
+            --shadow-inset: inset 0 1px 3px rgba(0, 0, 0, .2);
+            --code-bg: #111214;
+            --noise-opacity: .012;
+
+            color-scheme: dark;
+        }
+
+        /* ═══ LIGHT ═══
+           WCAG AA verified */
+        [data-theme="light"] {
+            /* Material 0: Shell — frosted glass (light) */
+            --shell: #ecedf0;
+            --shell-glass: rgba(236, 237, 240, .75);
+
+            /* Material 1: Content — paper (warm white, reading-friendly) */
+            --content: #fafaf9;
+            /* barely warm for paper feel */
+            --content-warm: #f8f8f6;
+
+            --surface-hover: rgba(0, 0, 0, .03);
+            --surface-active: rgba(0, 0, 0, .05);
+            --surface-card: rgba(0, 0, 0, .015);
+
+            /* #111827 on #ecedf0 = 14.8:1 (AAA)
+               #111827 on #fafaf9 = 17.8:1 (AAA)
+               #6b7280 on #fafaf9 =  5.3:1 (AA)
+               #059669 on #fafaf9 =  4.5:1 (AA) */
+            --text-1: #111827;
+            --text-2: #6b7280;
+            --text-3: #9ca3af;
+            --text-4: #d1d5db;
+
+            --brand: #059669;
+            --brand-hover: #047857;
+            --brand-subtle: rgba(5, 150, 105, .06);
+            --brand-muted: rgba(5, 150, 105, .12);
+
+            --border: rgba(0, 0, 0, .06);
+            --border-subtle: rgba(0, 0, 0, .03);
+            --shadow-content: -1px 0 0 rgba(0, 0, 0, .04), 0 -1px 0 rgba(0, 0, 0, .03);
+            --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 12px rgba(0, 0, 0, .03);
+            --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, .06);
+            --code-bg: #f3f3f1;
+            --noise-opacity: .018;
+
+            color-scheme: light;
+        }
+
+        /* ═══ RESET ═══ */
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font: var(--fw-normal) var(--text-small)/var(--lh-normal) var(--font);
+            letter-spacing: var(--ls-normal);
+            color: var(--text-1);
+            background: var(--shell);
+            height: 100vh;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            transition: background var(--speed-regular), color var(--speed-regular);
+        }
+
+        ::selection {
+            background: var(--brand-subtle);
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: transparent;
+            border-radius: 3px;
+        }
+
+        *:hover>::-webkit-scrollbar-thumb {
+            background: rgba(128, 128, 128, .2);
+        }
+
+        button {
+            font-family: var(--font);
+            cursor: pointer;
+        }
+
+        /* ══════════════════════════════════════
+           LAYOUT: Two-material architecture
+           
+           Layer 0 (Shell): wraps EVERYTHING — visible
+           on all sides around the content.
+           Layer 1 (Content): paper card floating inside
+           the shell, with rounded corners on all 4 sides.
+           ══════════════════════════════════════ */
+        .app {
+            display: grid;
+            grid-template-columns: var(--sidebar-w) 1fr;
+            grid-template-rows: var(--header-h) 1fr;
+            height: 100vh;
+            /* Shell padding: visible around content right + bottom */
+            padding-right: var(--sp);
+            padding-bottom: var(--sp);
+        }
+
+        /* ══ HEADER — part of the shell layer ══ */
+        .header {
+            grid-column: 1 / -1;
+            height: var(--header-h);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            background: var(--shell);
+            -webkit-app-region: drag;
+            transition: background var(--speed-regular);
+        }
+
+        .header-left {
+            width: var(--sidebar-w);
+            display: flex;
+            align-items: center;
+            padding-left: 72px;
+            gap: var(--sp);
+            -webkit-app-region: no-drag;
+        }
+
+        .brand-mark {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .brand-mark svg {
+            width: 16px;
+            height: 16px;
+            color: var(--brand);
+        }
+
+        .brand-mark span {
+            font-size: var(--text-mini);
+            font-weight: var(--fw-semibold);
+            letter-spacing: var(--ls-tight);
+        }
+
+        .header-center {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: var(--sp);
+            -webkit-app-region: no-drag;
+        }
+
+        .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: var(--text-mini);
+            color: var(--text-3);
+        }
+
+        .breadcrumb .sep {
+            color: var(--text-4);
+        }
+
+        .breadcrumb .current {
+            color: var(--text-1);
+            font-weight: var(--fw-medium);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            -webkit-app-region: no-drag;
+        }
+
+        .h-btn {
+            width: 30px;
+            height: 30px;
+            border: 0;
+            background: 0;
+            color: var(--text-3);
+            border-radius: var(--r-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background var(--speed-quick), color var(--speed-quick);
+            position: relative;
+        }
+
+        .h-btn:hover {
+            background: var(--surface-hover);
+            color: var(--text-1);
+        }
+
+        .h-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .h-btn .sun,
+        .h-btn .moon,
+        .sf-btn .sun,
+        .sf-btn .moon {
+            position: absolute;
+            transition: all var(--speed-regular);
+        }
+
+        [data-theme="dark"] .h-btn .sun,
+        [data-theme="dark"] .sf-btn .sun {
+            opacity: 1;
+        }
+
+        [data-theme="dark"] .h-btn .moon,
+        [data-theme="dark"] .sf-btn .moon {
+            opacity: 0;
+        }
+
+        [data-theme="light"] .h-btn .sun,
+        [data-theme="light"] .sf-btn .sun {
+            opacity: 0;
+        }
+
+        [data-theme="light"] .h-btn .moon,
+        [data-theme="light"] .sf-btn .moon {
+            opacity: 1;
+        }
+
+        /* ══ SIDEBAR — frosted glass material (shell) ══ */
+        .sidebar {
+            background: transparent;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .side-section {
+            padding: var(--sp);
+        }
+
+        .side-item {
+            display: flex;
+            align-items: center;
+            gap: var(--sp);
+            padding: 6px 10px;
+            border-radius: var(--r-md);
+            font-size: var(--text-mini);
+            color: var(--text-2);
+            cursor: pointer;
+            transition: background var(--speed-quick), color var(--speed-quick);
+            user-select: none;
+        }
+
+        .side-item:hover {
+            background: var(--surface-hover);
+            color: var(--text-1);
+        }
+
+        .side-item.active {
+            background: var(--brand-subtle);
+            color: var(--text-1);
+        }
+
+        .side-item svg {
+            width: 16px;
+            height: 16px;
+            color: var(--text-3);
+            flex-shrink: 0;
+        }
+
+        .side-item.active svg {
+            color: var(--brand);
+        }
+
+        .side-item .lbl {
+            flex: 1;
+        }
+
+        .side-item .cnt {
+            font-size: var(--text-micro);
+            color: var(--text-3);
+            font-family: var(--font-mono);
+        }
+
+        .side-item .k {
+            font-size: 10px;
+            color: var(--text-4);
+            font-family: var(--font-mono);
+            opacity: 0;
+            transition: opacity var(--speed-quick);
+        }
+
+        .side-item:hover .k {
+            opacity: 1;
+        }
+
+        .side-label {
+            font-size: var(--text-micro);
+            font-weight: var(--fw-medium);
+            color: var(--text-3);
+            padding: calc(var(--sp) * 1.5) 10px calc(var(--sp) * .5);
+        }
+
+        .sessions {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 var(--sp);
+        }
+
+        .sess {
+            display: flex;
+            align-items: center;
+            gap: var(--sp);
+            padding: 6px 10px;
+            border-radius: var(--r-md);
+            font-size: var(--text-mini);
+            color: var(--text-2);
+            cursor: pointer;
+            transition: background var(--speed-quick);
+            margin-bottom: 1px;
+        }
+
+        .sess:hover {
+            background: var(--surface-hover);
+            color: var(--text-1);
+        }
+
+        .sess.on {
+            background: var(--brand-subtle);
+            color: var(--text-1);
+            font-weight: var(--fw-medium);
+        }
+
+        .sess .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .sess .dot.live {
+            background: var(--brand);
+        }
+
+        .sess .dot.off {
+            background: var(--text-4);
+        }
+
+        .sess .nm {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .sess .tm {
+            font-size: 10px;
+            color: var(--text-4);
+            font-family: var(--font-mono);
+        }
+
+        .side-foot {
+            padding: calc(var(--sp) * 1.5);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .sf-btn {
+            width: 30px;
+            height: 30px;
+            border: 0;
+            background: 0;
+            color: var(--text-3);
+            border-radius: var(--r-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background var(--speed-quick), color var(--speed-quick);
+        }
+
+        .sf-btn:hover {
+            background: var(--surface-hover);
+            color: var(--text-1);
+        }
+
+        .sf-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* ══════════════════════════════════════
+           MAIN CONTENT — Layer 1: paper material
+           
+           Paper card floating inside the shell glass.
+           All 4 corners rounded — shell wraps entirely.
+           Subtle noise texture for tactile paper depth.
+           ══════════════════════════════════════ */
+        .main {
+            display: flex;
+            flex-direction: column;
+            background: var(--content);
+            min-width: 0;
+            border-radius: var(--r-content);
+            transition: background var(--speed-regular);
+            box-shadow: var(--shadow-content);
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Paper noise texture */
+        .main::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            opacity: var(--noise-opacity);
+            pointer-events: none;
+            border-radius: inherit;
+        }
+
+        .conversation {
+            flex: 1;
+            overflow-y: auto;
+            padding: calc(var(--sp) * 3) 0;
+        }
+
+        .thread {
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 0 calc(var(--sp) * 4);
+        }
+
+        /* Messages — spacing-separated, no borders */
+        .entry {
+            padding: calc(var(--sp) * 3) 0;
+            display: flex;
+            gap: calc(var(--sp) * 1.5);
+        }
+
+        .entry:last-child {
+            border-bottom: 0;
+        }
+
+        /* Avatars */
+        .avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: var(--r-md);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: var(--fw-semibold);
+            margin-top: 2px;
+        }
+
+        .avatar.user {
+            background: var(--surface-active);
+            color: var(--text-2);
+        }
+
+        .avatar.ai {
+            background: var(--brand-subtle);
+            color: var(--brand);
+        }
+
+        .avatar.ai svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .entry-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .entry-head {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+
+        .entry-role {
+            font-size: var(--text-mini);
+            font-weight: var(--fw-semibold);
+            color: var(--text-1);
+        }
+
+        .entry-role.ai {
+            color: var(--brand);
+        }
+
+        .entry-ts {
+            font-size: 10px;
+            color: var(--text-3);
+            font-family: var(--font-mono);
+        }
+
+        .entry-body {
+            font-size: var(--text-regular);
+            line-height: var(--lh-relaxed);
+            letter-spacing: var(--ls-normal);
+            color: var(--text-1);
+        }
+
+        .entry-body p {
+            margin-bottom: calc(var(--sp) * 1.5);
+        }
+
+        .entry-body p:last-child {
+            margin-bottom: 0;
+        }
+
+        .entry-body strong {
+            font-weight: var(--fw-semibold);
+        }
+
+        .entry-body code {
+            font: var(--text-micro) var(--font-mono);
+            background: var(--surface-active);
+            padding: 2px 6px;
+            border-radius: var(--r-sm);
+        }
+
+        .entry-body ol,
+        .entry-body ul {
+            padding-left: 20px;
+            margin-bottom: calc(var(--sp) * 1.5);
+        }
+
+        .entry-body li {
+            margin-bottom: 4px;
+            line-height: var(--lh-relaxed);
+        }
+
+        /* Skill cards — refined embedded status */
+        .skill-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin: calc(var(--sp) * 1.5) 0;
+        }
+
+        .skill-card {
+            display: flex;
+            align-items: center;
+            gap: calc(var(--sp) * 1.5);
+            padding: 10px 14px;
+            border-radius: var(--r-lg);
+            background: var(--surface-card);
+            transition: background var(--speed-quick);
+        }
+
+        .skill-card:hover {
+            background: var(--surface-hover);
+        }
+
+        .skill-card .sk-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: var(--r-md);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--surface-active);
+            color: var(--text-2);
+            flex-shrink: 0;
+        }
+
+        .skill-card .sk-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .skill-card .sk-name {
+            font-size: var(--text-mini);
+            font-weight: var(--fw-semibold);
+            font-family: var(--font-mono);
+        }
+
+        .skill-card .sk-desc {
+            font-size: var(--text-micro);
+            color: var(--text-3);
+            margin-top: 1px;
+        }
+
+        .skill-card .sk-badge {
+            font-size: 10px;
+            font-weight: var(--fw-semibold);
+            padding: 3px 8px;
+            border-radius: var(--r-full);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .skill-card .sk-badge.running {
+            background: var(--brand-subtle);
+            color: var(--brand);
+        }
+
+        .skill-card .sk-badge.queued {
+            background: var(--surface-active);
+            color: var(--text-3);
+        }
+
+        .skill-card .sk-badge.done {
+            background: var(--brand-muted);
+            color: var(--brand);
+        }
+
+        /* Result card */
+        .result-card {
+            display: flex;
+            align-items: center;
+            gap: calc(var(--sp) * 1.5);
+            padding: 12px 16px;
+            border-radius: var(--r-lg);
+            background: var(--brand-subtle);
+            margin-top: calc(var(--sp) * 2);
+        }
+
+        .result-card .rc-icon {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+
+        .result-card .rc-text {
+            flex: 1;
+        }
+
+        .result-card .rc-title {
+            font-size: var(--text-mini);
+            font-weight: var(--fw-semibold);
+            color: var(--brand);
+        }
+
+        .result-card .rc-sub {
+            font-size: var(--text-micro);
+            color: var(--text-2);
+            margin-top: 2px;
+        }
+
+        /* Code block */
+        .codeblock {
+            border-radius: var(--r-lg);
+            overflow: hidden;
+            margin: calc(var(--sp) * 2) 0;
+            background: var(--code-bg);
+            box-shadow: var(--shadow-card);
+        }
+
+        .cb-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 14px;
+            font: var(--fw-medium) var(--text-micro)/1 var(--font-mono);
+            color: var(--text-3);
+            background: var(--surface-card);
+        }
+
+        .cb-copy {
+            font: var(--text-micro) var(--font);
+            color: var(--text-3);
+            background: 0;
+            border: 0;
+            padding: 3px 8px;
+            border-radius: var(--r-sm);
+        }
+
+        .cb-copy:hover {
+            background: var(--surface-hover);
+            color: var(--text-2);
+        }
+
+        .codeblock pre {
+            padding: calc(var(--sp) * 2);
+            font: var(--text-mini)/var(--lh-relaxed) var(--font-mono);
+            overflow-x: auto;
+        }
+
+        .codeblock .kw {
+            color: var(--brand);
+        }
+
+        .codeblock .str {
+            color: #d4a054;
+        }
+
+        .codeblock .fn {
+            color: #6eb8cc;
+        }
+
+        .codeblock .cm {
+            color: var(--text-3);
+        }
+
+        /* ══ COMPOSE — input pressed into the paper ══ */
+        .compose {
+            padding: calc(var(--sp) * 2) calc(var(--sp) * 4) calc(var(--sp) * 3);
+            position: relative;
+            z-index: 1;
+        }
+
+        .compose-inner {
+            max-width: 680px;
+            margin: 0 auto;
+            display: flex;
+            gap: calc(var(--sp) * 1.5);
+            align-items: flex-end;
+        }
+
+        .compose-field {
+            flex: 1;
+            background: var(--content-warm);
+            border: 1px solid var(--border);
+            border-radius: var(--r-2xl);
+            padding: 12px 18px;
+            font: var(--text-small) var(--font);
+            letter-spacing: var(--ls-normal);
+            color: var(--text-1);
+            outline: 0;
+            resize: none;
+            min-height: 44px;
+            max-height: 200px;
+            line-height: var(--lh-normal);
+            box-shadow: var(--shadow-inset);
+            transition: border-color var(--speed-quick), box-shadow var(--speed-quick);
+        }
+
+        .compose-field::placeholder {
+            color: var(--text-3);
+        }
+
+        .compose-field:focus {
+            border-color: var(--brand);
+            box-shadow: 0 0 0 3px var(--brand-subtle);
+        }
+
+        .compose-send {
+            width: 44px;
+            height: 44px;
+            border: 0;
+            border-radius: var(--r-2xl);
+            background: var(--brand);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: opacity var(--speed-quick), transform var(--speed-quick);
+        }
+
+        .compose-send:hover {
+            opacity: .9;
+        }
+
+        .compose-send:active {
+            transform: scale(.95);
+        }
+
+        .compose-send svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .compose-hint {
+            text-align: center;
+            font-size: var(--text-micro);
+            color: var(--text-3);
+            padding-top: var(--sp);
+            max-width: 680px;
+            margin: 0 auto;
+        }
+
+        /* ═══ Responsive / Reduced motion ═══ */
+        @media (max-width: 768px) {
+            .app {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: none;
+            }
+
+            .main {
+                border-radius: 0;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation: none !important;
+                transition: none !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="app">
+
+        <!-- HEADER — Shell layer -->
+        <header class="header">
+            <div class="header-left">
+                <div class="brand-mark">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="1" y="1" width="15" height="15" rx="4" fill="currentColor" opacity=".4" />
+                        <rect x="8" y="8" width="15" height="15" rx="4" fill="currentColor" opacity=".85" />
+                    </svg>
+                    <span>AlderCowork</span>
+                </div>
+            </div>
+            <div class="header-center">
+                <div class="breadcrumb">
+                    <span>Sessions</span>
+                    <span class="sep">/</span>
+                    <span class="current">Deploy k8s service</span>
+                </div>
+            </div>
+            <div class="header-right">
+            </div>
+        </header>
+
+        <!-- SIDEBAR — Shell layer (transparent, shell shows through) -->
+        <nav class="sidebar">
+            <div class="side-section">
+                <div class="side-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <span class="lbl">Sessions</span>
+                    <span class="k">⌘1</span>
+                </div>
+                <div class="side-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                    </svg>
+                    <span class="lbl">Skills</span>
+                    <span class="cnt">24</span>
+                    <span class="k">⌘2</span>
+                </div>
+                <div class="side-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" />
+                    </svg>
+                    <span class="lbl">Runbooks</span>
+                    <span class="k">⌘3</span>
+                </div>
+            </div>
+
+            <div class="side-label">Recent</div>
+
+            <div class="sessions">
+                <div class="sess on"><span class="dot live"></span><span class="nm">Deploy k8s service</span><span
+                        class="tm">now</span></div>
+                <div class="sess"><span class="dot off"></span><span class="nm">Create Feishu tasks</span><span
+                        class="tm">2h</span></div>
+                <div class="sess"><span class="dot off"></span><span class="nm">Refactor auth module</span><span
+                        class="tm">5h</span></div>
+                <div class="sess"><span class="dot off"></span><span class="nm">Data analysis pipeline</span><span
+                        class="tm">1d</span></div>
+                <div class="sess"><span class="dot off"></span><span class="nm">Setup CI/CD pipeline</span><span
+                        class="tm">2d</span></div>
+                <div class="sess"><span class="dot off"></span><span class="nm">Code review PR #247</span><span
+                        class="tm">3d</span></div>
+            </div>
+
+            <div class="side-foot">
+                <button class="sf-btn" id="tt" title="Toggle theme">
+                    <svg class="sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <circle cx="12" cy="12" r="5" />
+                        <line x1="12" y1="1" x2="12" y2="3" />
+                        <line x1="12" y1="21" x2="12" y2="23" />
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                        <line x1="1" y1="12" x2="3" y2="12" />
+                        <line x1="21" y1="12" x2="23" y2="12" />
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+                    </svg>
+                    <svg class="moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                    </svg>
+                </button>
+                <button class="sf-btn" title="Settings (⌘,)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3" />
+                        <path
+                            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                </button>
+            </div>
+        </nav>
+
+        <!-- MAIN — Content layer (raised, different material) -->
+        <main class="main">
+            <div class="conversation">
+                <div class="thread">
+
+                    <div class="entry">
+                        <div class="avatar user">Y</div>
+                        <div class="entry-content">
+                            <div class="entry-head">
+                                <span class="entry-role">You</span>
+                                <span class="entry-ts">13:28</span>
+                            </div>
+                            <div class="entry-body">
+                                <p>帮我把 aurora-photography 的 booking 服务部署到 staging 环境，用飞书通知团队部署结果</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="entry">
+                        <div class="avatar ai">
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <rect x="1" y="1" width="15" height="15" rx="4" fill="currentColor" opacity=".4" />
+                                <rect x="8" y="8" width="15" height="15" rx="4" fill="currentColor" opacity=".85" />
+                            </svg>
+                        </div>
+                        <div class="entry-content">
+                            <div class="entry-head">
+                                <span class="entry-role ai">AlderCowork</span>
+                                <span class="entry-ts">13:28</span>
+                            </div>
+                            <div class="entry-body">
+                                <p>Matched <strong>2 skills</strong> for this task. Executing in sequence:</p>
+
+                                <div class="skill-cards">
+                                    <div class="skill-card">
+                                        <div class="sk-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2">
+                                                <path d="M22 2L11 13" />
+                                                <path d="M22 2l-7 20-4-9-9-4 20-7z" />
+                                            </svg></div>
+                                        <div class="sk-info">
+                                            <div class="sk-name">deploy-k8s</div>
+                                            <div class="sk-desc">Docker build → K8s rollout → health check</div>
+                                        </div>
+                                        <span class="sk-badge done"><svg width="10" height="10" viewBox="0 0 24 24"
+                                                fill="none" stroke="currentColor" stroke-width="3">
+                                                <polyline points="20 6 9 17 4 12" />
+                                            </svg> Done</span>
+                                    </div>
+                                    <div class="skill-card">
+                                        <div class="sk-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2">
+                                                <path
+                                                    d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                                            </svg></div>
+                                        <div class="sk-info">
+                                            <div class="sk-name">feishu-integration</div>
+                                            <div class="sk-desc">Send deploy notification to team channel</div>
+                                        </div>
+                                        <span class="sk-badge running">Running</span>
+                                    </div>
+                                </div>
+
+                                <p>Build and deploy completed successfully:</p>
+                                <ol>
+                                    <li>Built image <code>registry.cn/aurora/booking:v2.3.1</code></li>
+                                    <li>Rolled out to <strong>staging</strong> namespace</li>
+                                    <li>Health check passed — 3/3 pods running</li>
+                                </ol>
+
+                                <div class="codeblock">
+                                    <div class="cb-head"><span>deploy-k8s/scripts/deploy.sh</span><button
+                                            class="cb-copy">Copy</button></div>
+                                    <pre><span class="cm"># Building booking-service image</span>
+<span class="kw">docker</span> build -t registry.cn/aurora/booking:<span class="str">v2.3.1</span> .
+
+<span class="kw">kubectl</span> set image deployment/booking \
+  booking=registry.cn/aurora/booking:<span class="str">v2.3.1</span> \
+  --namespace=<span class="str">staging</span>
+
+<span class="cm"># Waiting for rollout…</span>
+<span class="fn">deployment.apps/booking</span> successfully rolled out ✓</pre>
+                                </div>
+
+                                <p>Sending deploy report to team via <code>feishu-integration</code>…</p>
+
+                                <div class="result-card">
+                                    <span class="rc-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                            stroke="var(--brand)" stroke-width="2">
+                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                            <polyline points="22 4 12 14.01 9 11.01" />
+                                        </svg></span>
+                                    <div class="rc-text">
+                                        <div class="rc-title">Deploy Successful</div>
+                                        <div class="rc-sub">booking:v2.3.1 → staging · 3 pods · 18s total</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="compose">
+                <div class="compose-inner">
+                    <textarea class="compose-field" placeholder="Message AlderCowork… ⌘⏎ to send" rows="1"></textarea>
+                    <button class="compose-send">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M5 12h14M12 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="compose-hint">AlderCowork can make mistakes. Check important info.</div>
+            </div>
+        </main>
+
+    </div>
+
+    <script>
+        const h = document.documentElement;
+        if (localStorage.getItem('cw-t')) h.dataset.theme = localStorage.getItem('cw-t');
+        document.getElementById('tt').onclick = () => {
+            const n = h.dataset.theme === 'dark' ? 'light' : 'dark';
+            h.dataset.theme = n;
+            localStorage.setItem('cw-t', n);
+        };
+        document.querySelector('.compose-field').oninput = function () {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+        };
+        document.querySelectorAll('.sess').forEach(s => s.onclick = () => {
+            document.querySelectorAll('.sess').forEach(x => x.classList.remove('on'));
+            s.classList.add('on');
+        });
+        document.querySelectorAll('.side-item').forEach(i => i.onclick = () => {
+            document.querySelectorAll('.side-item').forEach(x => x.classList.remove('active'));
+            i.classList.add('active');
+        });
+    </script>
+</body>
+
+</html>

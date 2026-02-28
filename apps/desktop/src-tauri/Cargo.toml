@@ -1,0 +1,20 @@
+[package]
+name = "aldercowork-desktop"
+version = "0.1.0"
+description = "AlderCowork desktop shell powered by Tauri"
+authors = ["AlderCowork Team"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-http = { version = "2", features = ["stream"] }
+tokio = { version = "1", features = ["process", "time", "sync", "rt"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rfd = "0.15"
+libc = "0.2"

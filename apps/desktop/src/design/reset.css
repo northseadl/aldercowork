@@ -1,0 +1,45 @@
+/* ═══ RESET ═══ */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font: var(--fw-normal) var(--text-small) / var(--lh-normal) var(--font);
+  letter-spacing: var(--ls-normal);
+  color: var(--text-1);
+  background: var(--shell);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--speed-regular), color var(--speed-regular);
+}
+
+::selection {
+  background: var(--brand-subtle);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+
+*:hover > ::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, .2);
+}
+
+button {
+  font-family: var(--font);
+  cursor: pointer;
+}
