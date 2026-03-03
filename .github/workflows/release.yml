@@ -131,16 +131,27 @@ jobs:
           file "$SIDECAR"
           echo "Sidecar verified: $SIDECAR ($(du -h "$SIDECAR" | awk '{print $1}'))"
 
+      - name: Setup linuxdeploy (AppImage)
+        if: runner.os == 'Linux'
+        run: |
+          # GHA runners lack FUSE — extract and run linuxdeploy AppImage
+          curl -sL -o /tmp/linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x /tmp/linuxdeploy
+          # Make it available
+          sudo mv /tmp/linuxdeploy /usr/local/bin/linuxdeploy
+          echo "linuxdeploy installed"
+
       - name: Build Tauri app
         working-directory: apps/desktop
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
           # Windows signing (only if set)
           TAURI_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           TAURI_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           NO_STRIP: true
-          APPIMAGE_EXTRACT_AND_RUN: 1
+          APPIMAGE_EXTRACT_AND_RUN: '1'
         run: |
           BUNDLES="${{ matrix.bundle_targets }}"
 
