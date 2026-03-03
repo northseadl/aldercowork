@@ -73,7 +73,7 @@
       "endpoints": [
         "https://github.com/northseadl/aldercowork/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE_WITH_TAURI_PUBKEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM3NDcwOTYxQUFFMUFENUYKUldSZnJlR3FZUWxIeDRDZG0rQ2xnRHgvV1h6V0xvelFlUkV3WGgzWU5odldKQ2Q1U1F3dDVYRFoK",
       "windows": {
         "installMode": "passive"
       }
