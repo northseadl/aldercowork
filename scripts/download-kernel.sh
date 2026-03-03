@@ -49,12 +49,13 @@ detect_target() {
 # Map target to GitHub release asset search tokens
 asset_tokens() {
   local target="$1"
+  # OpenCode uses: darwin/linux/windows + x64/arm64 (not x86_64/aarch64)
   case "$target" in
     aarch64-apple-darwin)       echo "darwin arm64" ;;
-    x86_64-apple-darwin)        echo "darwin x86_64" ;;
-    x86_64-unknown-linux-gnu)   echo "linux x86_64" ;;
+    x86_64-apple-darwin)        echo "darwin x64" ;;
+    x86_64-unknown-linux-gnu)   echo "linux x64" ;;
     aarch64-unknown-linux-gnu)  echo "linux arm64" ;;
-    x86_64-pc-windows-msvc)     echo "windows x86_64" ;;
+    x86_64-pc-windows-msvc)     echo "windows x64" ;;
   esac
 }
 
@@ -75,12 +76,12 @@ fi
 
 echo "==> Fetching release from $RELEASE_URL"
 
-AUTH_HEADER=""
+CURL_ARGS=(-sL -H "Accept: application/vnd.github+json" -H "User-Agent: aldercowork-kernel-downloader")
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-  AUTH_HEADER="-H \"Authorization: Bearer ${GITHUB_TOKEN}\""
+  CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
 fi
 
-RELEASE_JSON="$(eval curl -sL -H \"Accept: application/vnd.github+json\" -H \"User-Agent: aldercowork-kernel-downloader\" $AUTH_HEADER \"$RELEASE_URL\")"
+RELEASE_JSON="$(curl "${CURL_ARGS[@]}" "$RELEASE_URL")"
 
 TAG="$(echo "$RELEASE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null || true)"
 if [ -z "$TAG" ]; then
