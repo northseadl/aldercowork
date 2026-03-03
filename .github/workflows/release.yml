@@ -115,6 +115,21 @@ jobs:
             -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Verify sidecar binary
+        shell: bash
+        run: |
+          echo "=== Binaries dir ==="
+          ls -la apps/desktop/src-tauri/binaries/
+          SIDECAR="apps/desktop/src-tauri/binaries/opencode-${{ matrix.target }}"
+          [[ "${{ matrix.target }}" == *windows* ]] && SIDECAR="${SIDECAR}.exe"
+          if [ ! -f "$SIDECAR" ]; then
+            echo "::error::Sidecar not found: $SIDECAR"
+            exit 1
+          fi
+          chmod +x "$SIDECAR"
+          file "$SIDECAR"
+          echo "Sidecar verified: $SIDECAR ($(du -h "$SIDECAR" | awk '{print $1}'))"
+
       - name: Build Tauri app
         working-directory: apps/desktop
         shell: bash
