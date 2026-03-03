@@ -81,7 +81,7 @@ impl KernelManager {
         // Launch sidecar
         let shell = app.shell();
         let mut command = shell
-            .sidecar("opencode")
+            .sidecar("binaries/opencode")
             .map_err(|e| format!("Failed to create sidecar command: {e}"))?
             .args(["serve", "--port", &port.to_string()]);
 
