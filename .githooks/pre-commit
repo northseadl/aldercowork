@@ -63,7 +63,7 @@ if [ -n "$STAGED_FILES" ]; then
   for pattern in "${SECRET_PATTERNS[@]}"; do
     # Only scan text files, skip lock files and binaries
     MATCHES=$(echo "$STAGED_FILES" \
-      | grep -v '\.lock$\|pnpm-lock\|Cargo\.lock\|\.png$\|\.ico$\|\.icns$\|^\.githooks/' \
+      | grep -v '\.lock$\|pnpm-lock\|Cargo\.lock\|\.png$\|\.ico$\|\.icns$\|^\.githooks/\|^\.github/' \
       | xargs grep -lEn "$pattern" 2>/dev/null || true)
 
     if [ -n "$MATCHES" ]; then

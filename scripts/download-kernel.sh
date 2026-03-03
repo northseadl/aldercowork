@@ -74,7 +74,13 @@ else
 fi
 
 echo "==> Fetching release from $RELEASE_URL"
-RELEASE_JSON="$(curl -sL -H "Accept: application/vnd.github+json" -H "User-Agent: aldercowork-kernel-downloader" "$RELEASE_URL")"
+
+AUTH_HEADER=""
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  AUTH_HEADER="-H \"Authorization: Bearer ${GITHUB_TOKEN}\""
+fi
+
+RELEASE_JSON="$(eval curl -sL -H \"Accept: application/vnd.github+json\" -H \"User-Agent: aldercowork-kernel-downloader\" $AUTH_HEADER \"$RELEASE_URL\")"
 
 TAG="$(echo "$RELEASE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null || true)"
 if [ -z "$TAG" ]; then

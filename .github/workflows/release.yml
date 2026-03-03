@@ -21,7 +21,7 @@ jobs:
           - os: macos-14
             target: aarch64-apple-darwin
             bundle_targets: dmg
-          - os: macos-13
+          - os: macos-latest
             target: x86_64-apple-darwin
             bundle_targets: dmg
           - os: ubuntu-22.04
@@ -75,6 +75,8 @@ jobs:
       - name: Download OpenCode sidecar
         working-directory: apps/desktop/src-tauri
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash ../../../scripts/download-kernel.sh
 
       # ---------------------------------------------------------------
