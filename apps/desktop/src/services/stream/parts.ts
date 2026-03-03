@@ -23,21 +23,41 @@ export function inferToolStatus(explicit: unknown, output: unknown, error: unkno
     return 'pending'
 }
 
-export function parseToolFromPart(part: Record<string, unknown>): ToolCallState | null {
-    const id = asString(part.id)
+export interface ParseToolFromPartOptions {
+    /** Fallback tool/part id when the payload omits `part.id` (common in delta events). */
+    fallbackId?: string
+    /** Previous tool state — used to preserve fields when parsing deltas. */
+    previous?: ToolCallState
+}
+
+export function parseToolFromPart(
+    part: Record<string, unknown>,
+    options: ParseToolFromPartOptions = {},
+): ToolCallState | null {
+    const id = asString(part.id) ?? options.fallbackId
     if (!id) return null
     const state = asRecord(part.state)
     const rawInput = state.input ?? part.input ?? part.arguments
     const rawOutput = state.output ?? part.result
     const rawError = state.error
 
+    const previous = options.previous
+    const explicitStatus = state.status ?? part.status
+    const parsedStatus = parseToolStatus(explicitStatus)
+
+    const status: ToolStatus = parsedStatus
+        ?? (rawError !== undefined && rawError !== null ? 'failed' : null)
+        ?? (rawOutput !== undefined && rawOutput !== null ? 'completed' : null)
+        ?? previous?.status
+        ?? 'pending'
+
     return {
         id,
-        name: asString(part.tool) ?? asString(part.name) ?? 'unknown_tool',
-        input: stringifyValue(rawInput),
-        output: rawOutput === undefined ? undefined : stringifyValue(rawOutput),
-        status: inferToolStatus(state.status ?? part.status, rawOutput, rawError),
-        title: asString(state.title) ?? undefined,
+        name: asString(part.tool) ?? asString(part.name) ?? previous?.name ?? 'unknown_tool',
+        input: rawInput === undefined ? (previous?.input ?? '') : stringifyValue(rawInput),
+        output: rawOutput === undefined ? previous?.output : stringifyValue(rawOutput),
+        status,
+        title: asString(state.title) ?? previous?.title ?? undefined,
     }
 }
 

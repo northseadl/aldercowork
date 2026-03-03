@@ -10,34 +10,54 @@ const props = defineProps<{
   direction?: 'input' | 'output'
 }>()
 
-const { t } = useI18n()
+	const { t } = useI18n()
 
-const isImage = computed(() => props.file?.mime?.startsWith('image/') ?? false)
-const isPdf = computed(() => props.file?.mime === 'application/pdf')
-const displayName = computed(() => props.file?.filename ?? t('chat.file.unnamed'))
-const hasUrl = computed(() => Boolean(props.file?.url?.trim()))
+	const isImage = computed(() => props.file?.mime?.startsWith('image/') ?? false)
+	const isPdf = computed(() => props.file?.mime === 'application/pdf')
+	const displayName = computed(() => props.file?.filename ?? t('chat.file.unnamed'))
+
+	function normalizeSafeUrl(value?: string): string | undefined {
+	  const url = (value ?? '').trim()
+	  if (!url) return undefined
+
+	  const lower = url.toLowerCase()
+	  if (
+	    lower.startsWith('http://') ||
+	    lower.startsWith('https://') ||
+	    lower.startsWith('data:') ||
+	    lower.startsWith('blob:')
+	  ) {
+	    return url
+	  }
+		  if (url.startsWith('/')) return url
+
+	  return undefined
+	}
+
+	const safeUrl = computed<string | undefined>(() => normalizeSafeUrl(props.file?.url))
+	const hasUrl = computed(() => Boolean(safeUrl.value))
 </script>
 
 <template>
-  <div v-if="file && hasUrl" class="file-attachment" :class="{ 'is-image': isImage, 'is-input': direction === 'input' }">
-    <!-- Inline image -->
-    <template v-if="isImage">
-      <img
-        :src="file.url"
-        :alt="displayName"
-        class="file-image"
-        loading="lazy"
-      />
+	  <div v-if="file" class="file-attachment" :class="{ 'is-image': isImage, 'is-input': direction === 'input' }">
+	    <!-- Inline image -->
+	    <template v-if="isImage && safeUrl">
+	      <img
+	        :src="safeUrl"
+	        :alt="displayName"
+	        class="file-image"
+	        loading="lazy"
+	      />
       <div class="file-meta">
         <span class="file-name">{{ displayName }}</span>
       </div>
     </template>
 
     <!-- PDF / generic file -->
-    <template v-else>
-      <div class="file-card">
-        <svg class="file-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path v-if="isPdf" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+	    <template v-else>
+	      <div class="file-card">
+	        <svg class="file-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+	          <path v-if="isPdf" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
           <polyline v-if="isPdf" points="14 2 14 8 20 8" />
           <path v-if="!isPdf" d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
           <polyline v-if="!isPdf" points="13 2 13 9 20 9" />
@@ -45,14 +65,14 @@ const hasUrl = computed(() => Boolean(props.file?.url?.trim()))
         <div class="file-info">
           <span class="file-name">{{ displayName }}</span>
           <span class="file-mime">{{ file.mime }}</span>
-        </div>
-        <a
-          v-if="hasUrl"
-          :href="file.url"
-          :download="file.filename"
-          class="file-download"
-          :title="t('chat.file.download')"
-          target="_blank"
+	        </div>
+	        <a
+	          v-if="hasUrl"
+	          :href="safeUrl"
+	          :download="file.filename"
+	          class="file-download"
+	          :title="t('chat.file.download')"
+	          target="_blank"
           rel="noopener"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

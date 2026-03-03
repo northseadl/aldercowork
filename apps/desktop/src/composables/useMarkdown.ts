@@ -37,40 +37,49 @@ hljs.registerLanguage('diff', diff)
 hljs.registerLanguage('markdown', markdown)
 hljs.registerLanguage('md', markdown)
 
-const md = new MarkdownIt({
-    html: false,
-    linkify: true,
-    typographer: true,
-    highlight(str: string, lang: string): string {
-        const displayLang = lang || 'text'
-        const escaped = lang && hljs.getLanguage(lang)
-            ? hljs.highlight(str, { language: lang }).value
-            : md.utils.escapeHtml(str)
+export type MarkdownRenderMode = 'rich' | 'fast'
 
-        return [
-            '<pre class="codeblock">',
-            `<div class="cb-head"><span>${md.utils.escapeHtml(displayLang)}</span><button class="cb-copy" type="button">Copy</button></div>`,
-            `<code class="hljs">${escaped}</code>`,
-            '</pre>',
-        ].join('')
-    },
-})
+function createMarkdownRenderer(enableHighlight: boolean): MarkdownIt {
+    const md = new MarkdownIt({
+        html: false,
+        linkify: true,
+        typographer: true,
+        highlight(str: string, lang: string): string {
+            const displayLang = lang || 'text'
+            const escaped = enableHighlight && lang && hljs.getLanguage(lang)
+                ? hljs.highlight(str, { language: lang }).value
+                : md.utils.escapeHtml(str)
 
-// Open external links in new tab
-const defaultRender = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+            return [
+                '<pre class="codeblock">',
+                `<div class="cb-head"><span>${md.utils.escapeHtml(displayLang)}</span><button class="cb-copy" type="button">Copy</button></div>`,
+                `<code class="hljs">${escaped}</code>`,
+                '</pre>',
+            ].join('')
+        },
+    })
 
-md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
-    const href = tokens[idx].attrGet('href') ?? ''
-    if (href.startsWith('http')) {
-        tokens[idx].attrSet('target', '_blank')
-        tokens[idx].attrSet('rel', 'noopener noreferrer')
+    // Open external links in new tab
+    const defaultRender = md.renderer.rules.link_open ?? ((tokens, idx, options, _env, self) => self.renderToken(tokens, idx, options))
+
+    md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+        const href = tokens[idx].attrGet('href') ?? ''
+        if (href.startsWith('http')) {
+            tokens[idx].attrSet('target', '_blank')
+            tokens[idx].attrSet('rel', 'noopener noreferrer')
+        }
+        return defaultRender(tokens, idx, options, env, self)
     }
-    return defaultRender(tokens, idx, options, env, self)
+
+    return md
 }
 
+const mdRich = createMarkdownRenderer(true)
+const mdFast = createMarkdownRenderer(false)
+
 export function useMarkdown() {
-    function render(source: string): string {
-        return md.render(source)
+    function render(source: string, mode: MarkdownRenderMode = 'rich'): string {
+        return (mode === 'fast' ? mdFast : mdRich).render(source)
     }
 
     return { render }
@@ -106,12 +115,24 @@ export function installCopyDelegate(): () => void {
             return
         }
 
-        void navigator.clipboard.writeText(code).then(() => {
-            btn.textContent = 'Copied!'
-            setTimeout(() => {
-                btn.textContent = 'Copy'
-            }, 2000)
-        })
+        if (!navigator.clipboard?.writeText) {
+            return
+        }
+
+        void navigator.clipboard
+            .writeText(code)
+            .then(() => {
+                btn.textContent = 'Copied!'
+                setTimeout(() => {
+                    btn.textContent = 'Copy'
+                }, 2000)
+            })
+            .catch(() => {
+                btn.textContent = 'Copy failed'
+                setTimeout(() => {
+                    btn.textContent = 'Copy'
+                }, 2000)
+            })
     }
 
     document.addEventListener('click', copyDelegateHandler)

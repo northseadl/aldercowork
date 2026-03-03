@@ -161,6 +161,17 @@ export function useChat(
   let cancelRequested = false
   let alive = true
 
+  // ---------------------------------------------------------------------------
+  // Frame-paced commit scheduler
+  // ---------------------------------------------------------------------------
+
+  let commitRafId: number | null = null
+  let commitFallbackTimer: number | null = null
+  let pendingCommitResolvers: Array<() => void> = []
+  let lastFlushTime = 0
+  const COMMIT_INTERVAL_MS = 32
+  const COMMIT_FALLBACK_MS = 64
+
   // Dispose guard: abort streams and disarm commit on scope teardown
   onScopeDispose(() => {
     alive = false
@@ -168,19 +179,25 @@ export function useChat(
     streamRevision += 1
     activeAbort?.abort()
     activeAbort = null
+    if (commitRafId !== null) {
+      cancelAnimationFrame(commitRafId)
+      commitRafId = null
+    }
+    if (commitFallbackTimer !== null) {
+      window.clearTimeout(commitFallbackTimer)
+      commitFallbackTimer = null
+    }
+    const resolvers = pendingCommitResolvers
+    pendingCommitResolvers = []
+    for (const resolve of resolvers) resolve()
   })
 
   /**
-   * Frame-paced async commit — replaces the old RAF-based commit.
-   *
    * Called by the consumer at each render-worthy point via `await commit()`.
-   * Internally throttles to one render per frame (~16ms) and yields to the
-   * browser event loop so the paint can happen. This gives the commit function
-   * full control over render pacing without the consumer needing to know about
-   * frame budgets or yield mechanics.
+   * Internally schedules at most ~30fps and yields to the browser event loop
+   * so a paint can happen. The consumer awaiting commit provides backpressure,
+   * preventing event bursts from starving rendering.
    */
-  let lastFlushTime = 0
-  const FRAME_BUDGET_MS = 16
 
   // Zero-delay yield via MessageChannel (avoids setTimeout's 4ms minimum)
   const yieldToMain = (): Promise<void> =>
@@ -190,13 +207,50 @@ export function useChat(
       ch.port2.postMessage(undefined)
     })
 
-  const commit = async (): Promise<void> => {
-    if (!alive) return
-    const now = Date.now()
-    if (now - lastFlushTime < FRAME_BUDGET_MS) return
+  const resolvePendingCommits = () => {
+    const resolvers = pendingCommitResolvers
+    pendingCommitResolvers = []
+    for (const resolve of resolvers) resolve()
+  }
+
+  const flushCommit = (now: number) => {
+    if (commitRafId !== null) {
+      cancelAnimationFrame(commitRafId)
+      commitRafId = null
+    }
+    if (commitFallbackTimer !== null) {
+      window.clearTimeout(commitFallbackTimer)
+      commitFallbackTimer = null
+    }
+    if (!alive) {
+      resolvePendingCommits()
+      return
+    }
+
+    if (now - lastFlushTime < COMMIT_INTERVAL_MS) {
+      commitRafId = requestAnimationFrame(flushCommit)
+      if (commitFallbackTimer === null) {
+        commitFallbackTimer = window.setTimeout(() => flushCommit(performance.now()), COMMIT_FALLBACK_MS)
+      }
+      return
+    }
+
     lastFlushTime = now
+    const resolvers = pendingCommitResolvers
+    pendingCommitResolvers = []
     messages.value = [...messages.value]
-    await yieldToMain()
+    void yieldToMain().then(() => { for (const resolve of resolvers) resolve() })
+  }
+
+  const commit = (): Promise<void> => {
+    if (!alive) return Promise.resolve()
+    if (commitRafId === null) {
+      commitRafId = requestAnimationFrame(flushCommit)
+      if (commitFallbackTimer === null) {
+        commitFallbackTimer = window.setTimeout(() => flushCommit(performance.now()), COMMIT_FALLBACK_MS)
+      }
+    }
+    return new Promise((resolve) => pendingCommitResolvers.push(resolve))
   }
   const commitSync = () => { if (alive) messages.value = [...messages.value] }
 
@@ -581,7 +635,7 @@ function mapRemoteMessage(raw: Record<string, unknown>): RichMessage {
         },
       })
     } else if (partType === 'tool') {
-      const tool = parseToolFromPart(rp)
+      const tool = parseToolFromPart(rp, { fallbackId: partId })
       if (tool) parts.push({ id: partId, type: 'tool', tool })
     } else if (partType === 'step-start') {
       parts.push({ id: partId, type: 'step-start' })

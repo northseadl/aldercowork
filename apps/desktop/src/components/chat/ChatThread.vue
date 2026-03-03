@@ -110,7 +110,6 @@ const scrollToBottom = async (force = false) => {
 watch(
   () => props.messages,
   () => { void scrollToBottom() },
-  { deep: true },
 )
 
 onMounted(() => { void scrollToBottom(true) })

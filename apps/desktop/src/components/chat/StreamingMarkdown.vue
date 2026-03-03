@@ -15,6 +15,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import morphdom from 'morphdom'
 import { useMarkdown } from '../../composables/useMarkdown'
+import type { MarkdownRenderMode } from '../../composables/useMarkdown'
 
 const props = defineProps<{
   text: string
@@ -25,7 +26,7 @@ const markdown = useMarkdown()
 const containerRef = ref<HTMLElement | null>()
 
 // ---------------------------------------------------------------------------
-// Arrival rate estimation (EMA over sliding window)
+// Arrival rate estimation (sliding window + EMA smoothing)
 // ---------------------------------------------------------------------------
 
 interface ArrivalEntry { time: number; chars: number }
@@ -34,6 +35,7 @@ let estimatedRate = 150 // chars/sec — initial guess until we have data
 
 const MIN_RATE = 60
 const MAX_RATE = 1200
+const RATE_EMA_ALPHA = 0.25
 
 function recordArrival(chars: number) {
   const now = performance.now()
@@ -50,7 +52,8 @@ function recordArrival(chars: number) {
     const totalChars = arrivalLog.reduce((s, e) => s + e.chars, 0)
     if (windowMs > 30) {
       const raw = (totalChars / windowMs) * 1000
-      estimatedRate = Math.max(MIN_RATE, Math.min(MAX_RATE, raw))
+      const next = estimatedRate * (1 - RATE_EMA_ALPHA) + raw * RATE_EMA_ALPHA
+      estimatedRate = Math.max(MIN_RATE, Math.min(MAX_RATE, next))
     }
   }
 }
@@ -121,6 +124,76 @@ watch(() => props.text.length, (newLen, oldLen) => {
   }
 })
 
+// ---------------------------------------------------------------------------
+// Render mode — fast while streaming, rich after idle
+// ---------------------------------------------------------------------------
+
+const didStream = ref(!!props.streaming)
+watch(() => props.streaming, (streaming) => {
+  if (streaming) didStream.value = true
+})
+
+const richReady = ref(!props.streaming)
+let richUpgradeTimer: number | null = null
+let richUpgradeIdleId: number | null = null
+
+function cancelRichUpgrade() {
+  if (richUpgradeTimer !== null) {
+    window.clearTimeout(richUpgradeTimer)
+    richUpgradeTimer = null
+  }
+  if (richUpgradeIdleId !== null && typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(richUpgradeIdleId)
+    richUpgradeIdleId = null
+  }
+}
+
+function scheduleRichUpgrade() {
+  cancelRichUpgrade()
+  if (richReady.value) return
+
+  // Use idle time to avoid blocking the "typing" feel right after completion.
+  if (typeof window.requestIdleCallback === 'function') {
+    richUpgradeIdleId = window.requestIdleCallback(() => {
+      richUpgradeIdleId = null
+      richReady.value = true
+    }, { timeout: 1500 })
+    return
+  }
+
+  richUpgradeTimer = window.setTimeout(() => {
+    richUpgradeTimer = null
+    richReady.value = true
+  }, 200)
+}
+
+watch(
+  [() => props.streaming, () => displayedLength.value, () => props.text.length],
+  ([streaming, shownLen, fullLen]) => {
+    if (!didStream.value) {
+      richReady.value = true
+      cancelRichUpgrade()
+      return
+    }
+
+    if (streaming || shownLen < fullLen) {
+      richReady.value = false
+      cancelRichUpgrade()
+      return
+    }
+
+    scheduleRichUpgrade()
+  },
+  { immediate: true },
+)
+
+const renderMode = computed<MarkdownRenderMode>(() => {
+  if (!didStream.value) return 'rich'
+  if (props.streaming) return 'fast'
+  if (displayedLength.value < props.text.length) return 'fast'
+  return richReady.value ? 'rich' : 'fast'
+})
+
 // Streaming ended: let remaining buffer drain naturally at last known rate
 watch(() => props.streaming, (streaming) => {
   if (!streaming) {
@@ -141,6 +214,7 @@ watch(() => props.streaming, (streaming) => {
 onUnmounted(() => {
   if (rafId !== null) cancelAnimationFrame(rafId)
   arrivalLog.length = 0
+  cancelRichUpgrade()
 })
 
 // ---------------------------------------------------------------------------
@@ -172,7 +246,7 @@ const renderedHtml = computed(() => {
     ? props.text
     : props.text.slice(0, target)
 
-  return text ? markdown.render(text) : ''
+  return text ? markdown.render(text, renderMode.value) : ''
 })
 
 // ---------------------------------------------------------------------------
@@ -182,6 +256,8 @@ const renderedHtml = computed(() => {
 let lastHtml = ''
 let initialRenderDone = false
 const morphdomWrapper = document.createElement('div')
+
+const FADE_IN_TAGS = new Set(['p', 'li', 'pre', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
 
 function patchDom(html: string) {
   const el = containerRef.value
@@ -198,7 +274,10 @@ function patchDom(html: string) {
   morphdom(el, morphdomWrapper, {
     childrenOnly: true,
     onNodeAdded(node) {
-      if (node instanceof HTMLElement) {
+      // Only animate while "live" (streaming or draining), and only on block nodes.
+      const isLive = props.streaming || displayedLength.value < props.text.length
+      if (!isLive) return node
+      if (node instanceof HTMLElement && FADE_IN_TAGS.has(node.tagName.toLowerCase())) {
         node.classList.add('morph-new')
       }
       return node

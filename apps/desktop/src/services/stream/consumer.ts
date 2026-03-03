@@ -179,9 +179,9 @@ export async function consumeEventStream(
             }
 
             if (partType === 'tool') {
-                const tool = parseToolFromPart(part)
-                if (!tool) continue
                 const p = findOrCreatePart(aiMsg, state, partId, 'tool')
+                const tool = parseToolFromPart(part, { fallbackId: partId, previous: p.tool })
+                if (!tool) continue
                 p.tool = tool
                 state.sawActivity = true
                 await commit()

@@ -12,6 +12,7 @@
 ```text
 App.vue → AppShell (Header/Sidebar/Content) → router-view
   ChatView: useChat → SSE event.subscribe → promptAsync → part-centric message model (12 Part types)
+    render pacing: useChat commit barrier (rAF scheduler + post-paint yield, ~30fps) → StreamingMarkdown jitter buffer (fast render while streaming, idle-upgrade to rich highlight)
   SkillsView: skillStore → useSkillImport (filesystem scan) → SkillListItem / SkillDetail
   SettingsView: providers / engine / theme / shortcuts
 
@@ -34,7 +35,7 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 | Skill Activation IPC | `activate_skill(id, scope, ws_path)` / `deactivate_skill` / `get_skill_activations` — Rust 管理 symlink 创建/删除 | 安装 ≠ 激活；删除自动清理两个范围的 symlink |
 | Skill Recursive Discovery | `discover_skills_recursive` 递归扫描含 SKILL.md 的目录，ID 为相对路径（如 `monorepo/sub-skill`） | 支持 monorepo 布局 |
 | Skill Import | 压缩包 `unzip`/`tar` CLI 解压 + hoist；Git `--depth=1` 浅克隆。`sanitize_skill_name` 清理目录名 | 复用系统工具，零 Rust 解压依赖 |
-| Skill Frontmatter Parser | 零依赖 YAML frontmatter 解析器（`---` 分隔 key: value 子集），SKILL.md + skill.yaml 双格式 | 最小化依赖 |
+| Skill Frontmatter Parser | 对齐 OpenCode 官方标准：仅解析 SKILL.md 的 YAML frontmatter（name/description/license/compatibility/metadata），支持多行 block scalar（`\|` / `>`） | 与内核行为一致；无 skill.yaml 双轨 |
 | Part-Centric Message Model | `RichMessage { parts: MessagePart[] }` — 12 种 Part type 同构 SDK | 新增 Part Type 只需添加渲染组件 |
 | SSE Stream Contract | `event.subscribe(/event) → promptAsync → session.idle`，结束后 `session.messages` 对齐 | 与 OpenCode 官方流式协议一致 |
 | File-based Settings | `settings.json` 通过 Tauri IPC 读写，`settingsStore` 唯一写入者 | 跨窗口/进程一致 |
@@ -43,6 +44,7 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 | Provider Env Guard | env key 仅允许 `OPENAI_`/`ANTHROPIC_` 前缀，禁止系统敏感变量 | 收敛注入面 |
 | Permission Reply | `permission.reply(requestID)` 回传 `once/always/reject`（默认拒绝） | 避免权限悬挂 |
 | Model Selection | 无显式模型时不传 `model` 字段让内核决定；显式选择经 `provider.list` 校验 | Auto 模式与 SDK 行为一致 |
+| Per-Request Directory | SDK client 通过 `x-opencode-directory` header 传递工作区路径，切换工作区重建 client —— 内核无需重启 | sidecar 进程无状态，工作目录 per-request 级 |
 | i18n | 所有用户可见文本通过 `t()` 从 `zh.ts`/`en.ts` 读取 | 中英双语 |
 
 ## 设计系统
@@ -50,3 +52,4 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 - 双层材质: Shell(`--shell`) 包裹 Content(`--content`)，Content 区域 `--r-2xl` 圆角
 - 基础组件: `AppButton(brand/ghost/subtle)` / `AppBadge` / `AppIcon` / `AppCodeBlock`
 - Part 渲染: `StreamingMarkdown`(morphdom 增量) / `ReasoningBlock`(折叠思维链) / `TokenStats` / `PatchDiff` / `FileAttachment`
+- Streaming 约束: 流式期默认 fast markdown（禁用 highlight.js）降低 CPU + 限制渐显动画只作用于 block 节点；结束后 idle 时段升级 rich render（语法高亮 + copy button）

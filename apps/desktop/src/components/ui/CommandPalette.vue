@@ -100,11 +100,11 @@ const executeAction = (action: CommandAction) => {
   void action.handler()
 }
 
-const handleKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') {
-    emit('update:modelValue', false)
-    return
-  }
+	const handleKeydown = (e: KeyboardEvent) => {
+	  if (e.key === 'Escape') {
+	    emit('update:modelValue', false)
+	    return
+	  }
 
   if (filteredActions.value.length === 0) return
 
@@ -118,16 +118,27 @@ const handleKeydown = (e: KeyboardEvent) => {
     e.preventDefault()
     executeAction(filteredActions.value[selectedIndex.value])
   }
-}
+	}
 
-// Global hotkey Registration
-const handleGlobalKeydown = (e: KeyboardEvent) => {
-  // Cmd+K or Ctrl+K to open palette (only if we're not inside it and not blocked by form input, unless we globally want it)
-  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-    e.preventDefault()
-    emit('update:modelValue', !props.modelValue)
-  }
-}
+	// Global hotkey Registration
+	function isEditableTarget(target: EventTarget | null): boolean {
+	  const el = target instanceof HTMLElement ? target : null
+	  if (!el) return false
+
+	  const tag = el.tagName.toLowerCase()
+	  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true
+	  return el.isContentEditable
+	}
+
+	const handleGlobalKeydown = (e: KeyboardEvent) => {
+	  // Cmd+K or Ctrl+K to open palette (only if we're not inside it and not blocked by form input, unless we globally want it)
+	  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+	    // Avoid hijacking keybindings while typing, but still allow closing when palette is open.
+	    if (!props.modelValue && isEditableTarget(e.target)) return
+	    e.preventDefault()
+	    emit('update:modelValue', !props.modelValue)
+	  }
+	}
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown)

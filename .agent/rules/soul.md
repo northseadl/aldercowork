@@ -15,6 +15,7 @@
 - **Bounded reactive memory**: 对长生命周期前端状态（消息列表/附件队列）必须设置容量预算与窗口化策略，禁止无上限累积。
 - **Modal focus containment**: 任何阻断式弹层都必须具备 focus trap、初始焦点与焦点恢复，防止键盘焦点穿透背景。
 - **Incremental DOM for streaming**: 流式内容禁止使用 innerHTML 全量替换（CSS 动画每帧重启）；必须用 DOM diff（morphdom/vdom）做增量 patch + TypeWriter buffer 做自适应速率释放，保证旧节点稳定、新节点渐显。
+- **Backpressured streaming renders**: 流式消费者必须 await 一个“帧级 commit barrier”（rAF 调度 + paint 后 yield），让事件摄入速度不可能跑赢浏览器绘制；“节流直接 return 但不 yield”会把更新压成 burst，造成卡顿与节奏失真。
 
 ## 代码哲学 (Code Philosophy)
 - **NLOC mindset**: 优先复用生态能力，减少自研样板与不可维护代码。
@@ -36,3 +37,4 @@
 - **Nested interactive controls**: 在可点击容器内再嵌套 `<button>/<a>` 会破坏语义树与键盘行为；应改为容器 `role="button" + tabindex + Enter/Space`，内部动作保留真实按钮并阻断事件冒泡。
 - **Unbounded reactive collection**: 在 UI 层直接全量渲染与缓存增长型数组（消息/附件）会线性放大内存与重绘成本；应做限额、裁剪或虚拟化。
 - **Leaky global delegate**: 全局 `addEventListener` 无幂等 guard/卸载句柄会在 HMR 或重复挂载后触发多次副作用；必须成对注册与注销。
+- **Throttle-without-yield**: 在流式 UI 中节流渲染但不 yield（继续在同一 task 消费事件）会导致 UI 长时间不 paint，最终一次性跳帧；应使用共享的 awaitable commit barrier（rAF + post-paint yield）提供背压。

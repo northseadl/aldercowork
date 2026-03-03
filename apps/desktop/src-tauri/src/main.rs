@@ -6,12 +6,13 @@ use kernel::KernelManager;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 use tauri::Emitter;
 use tauri::Manager;
 use tokio::sync::Mutex;
+use tokio::time::{timeout, Duration};
 
 const PROVIDER_ENV_ALLOWED_PREFIXES: [&str; 2] = ["OPENAI_", "ANTHROPIC_"];
 const MAX_PROVIDER_ENV_KEY_LEN: usize = 128;
@@ -187,6 +188,71 @@ fn open_data_file_for_write(path: &Path) -> Result<std::fs::File, String> {
     }
 
     options.open(path).map_err(|e| format!("Write error: {e}"))
+}
+
+fn open_secure_temp_file_for_write(dest_path: &Path) -> Result<(PathBuf, std::fs::File), String> {
+    let parent = dest_path
+        .parent()
+        .ok_or_else(|| "Invalid destination path".to_string())?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
+
+    let file_name = dest_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid destination file name".to_string())?;
+
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+        options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW);
+    }
+
+    // Try a few times in the unlikely case of temp name collision.
+    for attempt in 0..12u32 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let tmp_name = format!(".{file_name}.tmp-{}-{}-{}", std::process::id(), now, attempt);
+        let tmp_path = parent.join(tmp_name);
+
+        match options.open(&tmp_path) {
+            Ok(file) => return Ok((tmp_path, file)),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(format!("Write error: {e}")),
+        }
+    }
+
+    Err("Failed to allocate temp file for write".into())
+}
+
+fn atomic_write_secure(path: &Path, content: &[u8]) -> Result<(), String> {
+    let (tmp_path, mut file) = open_secure_temp_file_for_write(path)?;
+
+    file.write_all(content)
+        .map_err(|e| format!("Write error: {e}"))?;
+    file.sync_all()
+        .map_err(|e| format!("Write flush error: {e}"))?;
+    drop(file);
+
+    // Best-effort: on Windows rename won't overwrite existing files.
+    #[cfg(windows)]
+    {
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    std::fs::rename(&tmp_path, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        format!("Atomic rename failed: {e}")
+    })?;
+
+    Ok(())
 }
 
 async fn stop_kernel_runtime(state: &Arc<Mutex<KernelManager>>) {
@@ -430,7 +496,7 @@ async fn write_kernel_config(app: tauri::AppHandle, content: String) -> Result<(
     serde_json::from_str::<serde_json::Value>(&content)
         .map_err(|e| format!("Invalid JSON: {e}"))?;
 
-    std::fs::write(&config_path, &content)
+    atomic_write_secure(&config_path, content.as_bytes())
         .map_err(|e| format!("Failed to write kernel config: {e}"))?;
 
     eprintln!("[main] wrote kernel config to {}", config_path.display());
@@ -784,7 +850,7 @@ async fn import_skill_git(
     }
 
     // Derive skill name from URL
-    let skill_name = repo_url
+    let raw_name = repo_url
         .trim_end_matches('/')
         .rsplit('/')
         .next()
@@ -792,9 +858,7 @@ async fn import_skill_git(
         .trim_end_matches(".git")
         .to_string();
 
-    if skill_name.is_empty() || skill_name.starts_with('.') {
-        return Err("Cannot derive skill name from URL".into());
-    }
+    let skill_name = sanitize_skill_name(&raw_name);
 
     let dest = skills_root.join(&skill_name);
 
@@ -804,11 +868,16 @@ async fn import_skill_git(
             .map_err(|e| format!("Failed to clean existing skill: {e}"))?;
     }
 
-    let output = tokio::process::Command::new("git")
+    let clone_future = tokio::process::Command::new("git")
         .args(["clone", "--depth=1", &repo_url])
         .arg(&dest)
-        .output()
+        // Disable interactive prompts to avoid hanging on credentials.
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output();
+
+    let output = timeout(Duration::from_secs(90), clone_future)
         .await
+        .map_err(|_| "git clone timed out".to_string())?
         .map_err(|e| format!("Failed to run git clone: {e}"))?;
 
     if !output.status.success() {
@@ -847,9 +916,28 @@ async fn activate_skill(
     workspace_path: Option<String>,
 ) -> Result<(), String> {
     let data_paths = resolve_data_paths(&app);
-    let source = PathBuf::from(&data_paths.skills).join(&skill_id);
-    if !source.exists() {
+
+    // Validate skill_id — allow nested skills via `/`, but block traversal/hidden segments.
+    if skill_id.contains('\\') || skill_id.contains("..")
+        || skill_id.starts_with('.') || skill_id.is_empty()
+        || skill_id.split('/').any(|seg| seg.starts_with('.') || seg.is_empty())
+    {
+        return Err("Invalid skill ID".into());
+    }
+
+    let skills_root = PathBuf::from(&data_paths.skills);
+    let source = skills_root.join(&skill_id);
+    if !source.is_dir() {
         return Err(format!("Skill not found: {skill_id}"));
+    }
+
+    // Verify canonical path stays within skills directory (reject symlinks escaping root).
+    let canonical = std::fs::canonicalize(&source)
+        .map_err(|e| format!("Path resolution error: {e}"))?;
+    let canonical_root = std::fs::canonicalize(&skills_root)
+        .map_err(|e| format!("Skills root resolution error: {e}"))?;
+    if !canonical.starts_with(&canonical_root) {
+        return Err("Path traversal denied".into());
     }
 
     let leaf = skill_leaf_name(&skill_id);
@@ -878,11 +966,11 @@ async fn activate_skill(
     }
 
     #[cfg(unix)]
-    std::os::unix::fs::symlink(&source, &link_path)
+    std::os::unix::fs::symlink(&canonical, &link_path)
         .map_err(|e| format!("symlink failed: {e}"))?;
 
     #[cfg(windows)]
-    std::os::windows::fs::symlink_dir(&source, &link_path)
+    std::os::windows::fs::symlink_dir(&canonical, &link_path)
         .map_err(|e| format!("symlink failed: {e}"))?;
 
     Ok(())
@@ -956,7 +1044,7 @@ async fn get_skill_activations(
             let p = entry.path();
             if !p.is_dir() { continue; }
             let name = match p.file_name().and_then(|n| n.to_str()) {
-                Some(n) if !n.starts_with('.') => n.to_string(),
+                Some(n) if !n.starts_with('.') && n != "node_modules" && n != "target" && n != "dist" && n != "build" && n != ".git" => n.to_string(),
                 _ => continue,
             };
             let has_skill = p.join("SKILL.md").exists() || p.join("skill.yaml").exists();
@@ -1117,7 +1205,7 @@ fn main() {
                 obj.remove("_aldercowork_skills");
 
                 if let Ok(json_str) = serde_json::to_string_pretty(&config) {
-                    if let Err(e) = std::fs::write(&config_path, &json_str) {
+                    if let Err(e) = atomic_write_secure(&config_path, json_str.as_bytes()) {
                         eprintln!("[main] failed to write config.json: {e}");
                     }
                 }
