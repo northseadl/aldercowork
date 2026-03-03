@@ -4,9 +4,10 @@ import { computed, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import KernelStatus from './components/app/KernelStatus.vue'
+import UpdateBanner from './components/app/UpdateBanner.vue'
 import WelcomeScreen from './components/app/WelcomeScreen.vue'
 import { AppContent, AppHeader, AppShell, AppSidebar } from './components/layout'
-import { AppToast, CommandPalette } from './components/ui'
+import { AppToast, CommandPalette, ConfirmDialog, PermissionDialog } from './components/ui'
 import { useI18n } from './i18n'
 import { createKernel, KERNEL_KEY } from './composables/useKernel'
 import { useKeyboard, useToast, installCopyDelegate } from './composables'
@@ -16,18 +17,8 @@ import { useSettingsStore } from './stores/settings'
 import { useSkillStore } from './stores/skill'
 import { useWorkspaceStore } from './stores/workspace'
 
-import type { AppNavId, BreadcrumbItem, SidebarNavItem } from './types'
-
-const RUNTIME_ERROR_EVENT = 'aldercowork:runtime-error'
-
-type RuntimeErrorSource = 'vue' | 'window' | 'promise' | 'router'
-
-interface RuntimeErrorDetail {
-  source: RuntimeErrorSource
-  message: string
-  stack?: string
-  timestamp: string
-}
+import type { AppNavId, BreadcrumbItem, RuntimeErrorDetail, SidebarNavItem } from './types'
+import { RUNTIME_ERROR_EVENT } from './types'
 
 const routeByNav: Record<AppNavId, string> = {
   sessions: '/',
@@ -266,6 +257,13 @@ const handleDeleteSession = async (id: string) => {
   toast.info('Session deleted')
 }
 
+const handleCreateSession = async () => {
+  const id = await sessionStore.createSession()
+  if (id && route.path !== '/') {
+    navigateTo('sessions')
+  }
+}
+
 watch(
   () => route.path,
   (path) => {
@@ -318,10 +316,12 @@ const showCommandPalette = ref(false)
         @select-nav="handleSelectNav"
         @select-session="handleSelectSession"
         @delete-session="handleDeleteSession"
+        @create-session="handleCreateSession"
       />
     </template>
 
     <template #content>
+      <UpdateBanner />
       <AppContent>
         <section v-if="fatalRuntimeError" class="app-runtime-error" role="alert">
           <h2 class="app-runtime-error__title">{{ t('kernel.error') }}</h2>
@@ -344,6 +344,8 @@ const showCommandPalette = ref(false)
   </AppShell>
 
   <CommandPalette v-model="showCommandPalette" />
+  <ConfirmDialog />
+  <PermissionDialog />
   <AppToast />
 </template>
 

@@ -391,7 +391,7 @@ defineExpose({ currentVariant, currentModel })
 
 .mp-variant-chip.is-active {
   background: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
   box-shadow: 0 1px 3px color-mix(in srgb, var(--brand) 40%, transparent);
 }
 
@@ -420,7 +420,7 @@ defineExpose({ currentVariant, currentModel })
 }
 
 .mp-popover-empty.is-error {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 /* Provider group */

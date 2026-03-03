@@ -1,19 +1,42 @@
 <script setup lang="ts">
+import { onBeforeUnmount } from 'vue'
+
 import { useI18n } from '../../i18n'
 import { useSettingsStore, BUILTIN_PROVIDERS, type ProviderDefinition } from '../../stores/settings'
 import { useCredentialStore } from '../../composables/useCredentialStore'
+import { useKernel } from '../../composables/useKernel'
 import ApiKeyInput from './ApiKeyInput.vue'
 
 const { t } = useI18n()
 const settings = useSettingsStore()
 const credentialStore = useCredentialStore()
+const kernel = useKernel()
+let restartTimer: ReturnType<typeof setTimeout> | null = null
 
 function getState(id: string) {
   return settings.providers.find((p) => p.id === id)
 }
 
+function scheduleKernelRestart() {
+  if (restartTimer) clearTimeout(restartTimer)
+  restartTimer = setTimeout(async () => {
+    if (kernel.status.value !== 'running' && kernel.status.value !== 'starting') return
+    try {
+      await kernel.restart()
+    } catch (error) {
+      console.warn('[settings] restart after credential rotation failed:', error)
+    }
+  }, 250)
+}
+
 function onKeySaved(providerId: string, hasKey: boolean) {
+  const prevHasKey = getState(providerId)?.hasKey ?? false
   settings.markProviderKey(providerId, hasKey)
+  // hasKey=true -> true means key rotation; provider state snapshot is unchanged,
+  // so App-level provider watcher will not restart the kernel.
+  if (prevHasKey && hasKey) {
+    scheduleKernelRestart()
+  }
 }
 
 async function onBaseUrlChange(def: ProviderDefinition, e: Event) {
@@ -37,6 +60,10 @@ function statusClass(id: string): string {
   if (state.hasKey && state.enabled) return 'connected'
   return 'unconfigured'
 }
+
+onBeforeUnmount(() => {
+  if (restartTimer) clearTimeout(restartTimer)
+})
 </script>
 
 <template>

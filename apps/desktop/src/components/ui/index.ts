@@ -1,6 +1,5 @@
-export { default as AppBadge } from './AppBadge.vue'
 export { default as AppButton } from './AppButton.vue'
-export { default as AppCodeBlock } from './AppCodeBlock.vue'
-export { default as AppIcon } from './AppIcon.vue'
 export { default as AppToast } from './AppToast.vue'
 export { default as CommandPalette } from './CommandPalette.vue'
+export { default as ConfirmDialog } from './ConfirmDialog.vue'
+export { default as PermissionDialog } from './PermissionDialog.vue'

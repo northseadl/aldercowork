@@ -1,3 +1,6 @@
+/* Cascade layer order: tokens → reset → markdown → components */
+@layer tokens, reset, markdown;
+
 @import './tokens.css';
 @import './reset.css';
 @import './markdown.css';

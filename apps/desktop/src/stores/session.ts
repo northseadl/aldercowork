@@ -115,9 +115,32 @@ export interface FileAttachment {
   bytes?: number
 }
 
+/** Source metadata describing why a file part was attached (@ reference). */
+export type FileReferenceSource =
+  | { type: 'file'; path: string }
+  | { type: 'symbol'; path: string; name: string; kind: number; range: { start: { line: number; character: number }; end: { line: number; character: number } } }
+  | { type: 'resource'; clientName: string; uri: string }
+
+export interface FileReference {
+  mime: string
+  url: string
+  filename: string
+  source: FileReferenceSource
+}
+
+/** A command/skill reference — dispatched via session.command() instead of promptAsync(). */
+export interface CommandReference {
+  name: string
+  source: 'command' | 'mcp' | 'skill'
+  template: string
+}
+
 export interface PromptInput {
   text: string
   attachments?: FileAttachment[]
+  references?: FileReference[]
+  /** When set, the prompt is dispatched as a command (skill) instead of a regular message. */
+  commandRef?: CommandReference
   agent?: string
 }
 
@@ -299,9 +322,32 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  function renameSession(id: string, title: string) {
+  async function renameSession(id: string, title: string) {
     const session = sessions.value.find((s) => s.id === id)
-    if (session) {
+    if (!session) return
+    session.title = title
+
+    // Persist to backend (fire-and-forget from caller's perspective)
+    const currentClient = client.value
+    if (currentClient && !id.startsWith('local-')) {
+      try {
+        // Follow the same flattened convention as session.create
+        const updateFn = currentClient.session.update as (opts: Record<string, unknown>) => Promise<unknown>
+        await updateFn({ sessionID: id, title })
+      } catch (e) {
+        console.warn('[session] Failed to persist title:', e)
+      }
+    }
+  }
+
+  /**
+   * Update title from a backend event (e.g. SSE session.updated).
+   * Unlike renameSession, this does NOT call session.update — the backend
+   * is already the source of truth.
+   */
+  function updateSessionTitle(id: string, title: string) {
+    const session = sessions.value.find((s) => s.id === id)
+    if (session && title) {
       session.title = title
     }
   }
@@ -345,6 +391,7 @@ export const useSessionStore = defineStore('session', () => {
     ensureActiveSession,
     deleteSession,
     renameSession,
+    updateSessionTitle,
     touchSession,
   }
 })

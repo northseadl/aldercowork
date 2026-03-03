@@ -177,7 +177,7 @@ async function removeKey() {
 }
 
 .aki__btn--edit:hover { color: var(--brand); background: var(--surface-hover); }
-.aki__btn--remove:hover { color: #ef4444; background: rgba(239, 68, 68, .08); }
+.aki__btn--remove:hover { color: var(--color-error); background: var(--color-error-subtle); }
 .aki__btn--remove:disabled { opacity: .4; cursor: not-allowed; }
 
 .aki__edit {

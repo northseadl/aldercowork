@@ -33,6 +33,7 @@ const emit = defineEmits<{
   'select-nav': [id: string]
   'select-session': [id: string]
   'delete-session': [id: string]
+  'create-session': []
 }>()
 
 const { t } = useI18n()
@@ -87,6 +88,7 @@ function handleSessionKeydown(event: KeyboardEvent, sessionId: string) {
         type="button"
         class="side-item"
         :class="{ active: item.id === resolvedActiveNavId }"
+        :aria-current="item.id === resolvedActiveNavId ? 'page' : undefined"
         :title="item.shortcut ? `${item.label} (${item.shortcut})` : item.label"
         @click="selectNav(item.id)"
       >
@@ -99,7 +101,20 @@ function handleSessionKeydown(event: KeyboardEvent, sessionId: string) {
       </button>
     </div>
 
-    <div class="side-label">{{ t('nav.recent') }}</div>
+    <div class="side-label-row">
+      <div class="side-label">{{ t('nav.recent') }}</div>
+      <button
+        type="button"
+        class="side-new-btn"
+        :title="t('nav.newSession')"
+        :aria-label="t('nav.newSession')"
+        @click="emit('create-session')"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14" /><path d="M5 12h14" />
+        </svg>
+      </button>
+    </div>
 
     <div class="sessions" :aria-label="t('nav.recentSessions')">
       <div
@@ -226,14 +241,41 @@ function handleSessionKeydown(event: KeyboardEvent, sessionId: string) {
 
 /* ── Label ── */
 
+.side-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--sp) * 2) 12px calc(var(--sp) * 0.75);
+}
+
 .side-label {
   font-size: var(--text-micro);
   font-weight: var(--fw-medium);
   color: var(--text-3);
-  padding: calc(var(--sp) * 2) 12px calc(var(--sp) * 0.75);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+.side-new-btn {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color var(--speed-quick), background var(--speed-quick);
+}
+
+.side-new-btn:hover {
+  color: var(--brand);
+  background: var(--brand-subtle);
+}
+
+.side-new-btn svg { width: 14px; height: 14px; }
 
 /* ── Sessions ── */
 
@@ -325,8 +367,8 @@ function handleSessionKeydown(event: KeyboardEvent, sessionId: string) {
 .sess-del svg { width: 12px; height: 12px; }
 
 .sess-del:hover {
-  color: #ef4444;
-  background: color-mix(in srgb, #ef4444 10%, transparent);
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
 }
 
 .sess:hover .tm { display: none; }

@@ -355,11 +355,11 @@ function skipForNow() {
 
 .welcome__error {
   font-size: var(--text-micro);
-  color: #ef4444;
-  background: rgba(239, 68, 68, .08);
+  color: var(--color-error);
+  background: var(--color-error-subtle);
   padding: 8px 12px;
   border-radius: var(--r-md);
-  border: 1px solid rgba(239, 68, 68, .15);
+  border: 1px solid color-mix(in srgb, var(--color-error) 15%, transparent);
 }
 
 .welcome__submit {

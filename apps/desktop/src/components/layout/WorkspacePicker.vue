@@ -290,7 +290,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocumentClick))
 }
 
 .ws-option-remove:hover {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .ws-divider {

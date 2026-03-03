@@ -107,17 +107,17 @@ async function handleRestart() {
   border-radius: var(--r-full);
 }
 .is-running .se__dot { background: var(--brand); box-shadow: 0 0 6px color-mix(in srgb, var(--brand) 60%, transparent); }
-.is-starting .se__dot { background: #f59e0b; }
+.is-starting .se__dot { background: var(--color-warning); }
 .is-stopped .se__dot { background: var(--text-4); }
-.is-error .se__dot { background: #ef4444; }
-.is-error { color: #ef4444; }
+.is-error .se__dot { background: var(--color-error); }
+.is-error { color: var(--color-error); }
 .se__error {
   font-size: var(--text-micro);
-  color: #ef4444;
-  background: rgba(239, 68, 68, .08);
+  color: var(--color-error);
+  background: var(--color-error-subtle);
   padding: 8px 12px;
   border-radius: var(--r-md);
-  border: 1px solid rgba(239, 68, 68, .15);
+  border: 1px solid color-mix(in srgb, var(--color-error) 15%, transparent);
 }
 .se__provider-list {
   display: flex;

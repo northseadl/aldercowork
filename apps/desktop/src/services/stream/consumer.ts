@@ -60,6 +60,7 @@ export async function consumeEventStream(
     commit: () => Promise<void>,
     permissionResolver?: PermissionResolver,
     onSessionStatus?: (status: string) => void,
+    onSessionUpdate?: (sessionId: string, title: string) => void,
 ): Promise<string | null> {
 
     for await (const payload of stream) {
@@ -73,6 +74,17 @@ export async function consumeEventStream(
         const evtSid = resolveEventSessionId(type, props)
         if (evtSid && evtSid !== sessionId) continue
         if (!state.promptDispatched) continue
+
+        // --- Session title update (backend auto-summarize) ---
+        if (type === 'session.updated' || type === 'session.created') {
+            const info = asRecord(props.info)
+            const title = asString(info.title)
+            const sid = asString(info.id) ?? sessionId
+            if (title && onSessionUpdate) {
+                onSessionUpdate(sid, title)
+            }
+            continue
+        }
 
         // --- Session error ---
         if (type === 'session.error') {
@@ -278,7 +290,7 @@ export async function consumeEventStream(
             continue
         }
 
-        // --- Part removed ---
+        // --- Part removal events ---
         if (type === 'message.part.removed') {
             const partId = asString(props.partID)
             if (!partId) continue

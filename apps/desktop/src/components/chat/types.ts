@@ -14,17 +14,6 @@ export interface SkillCardData {
   icon?: string
 }
 
-export interface ChatCodeBlockData {
-  language: string
-  code: string
-}
-
-export interface ChatResultData {
-  title: string
-  subtitle: string
-  success?: boolean
-}
-
 export interface ChatThreadMessage {
   id: string
   role: ChatRole
@@ -34,9 +23,6 @@ export interface ChatThreadMessage {
   content: string
   streaming?: boolean
   skills?: SkillCardData[]
-  codeBlocks?: ChatCodeBlockData[]
-  result?: ChatResultData
-  // Part-centric extension
   parts?: MessagePart[]
   tokens?: TokenInfo
   cost?: number

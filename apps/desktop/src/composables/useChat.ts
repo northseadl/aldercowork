@@ -10,6 +10,7 @@
 import { onScopeDispose, ref, watch, type Ref } from 'vue'
 
 import type {
+  FileReference,
   MessagePart,
   PartType,
   PromptInput,
@@ -145,6 +146,8 @@ export function useChat(
   /** Reactive variant (thinking depth) from ModelPicker. null = no variant. */
   variant?: Ref<string | null>,
   permissionResolver?: PermissionResolver,
+  /** Called when backend emits session.updated (e.g. auto-generated title). */
+  onSessionUpdate?: (sessionId: string, title: string) => void,
 ) {
   const messages = ref<RichMessage[]>([])
   const isStreaming = ref(false)
@@ -327,6 +330,21 @@ export function useChat(
         promptParts.push({ type: 'file', mime: att.mime, url: att.url, filename: att.filename })
       }
     }
+    // @ references → file parts with source metadata
+    if (input.references?.length) {
+      for (const ref of input.references) {
+        const srcRaw = ref.source
+        let source: Record<string, unknown> | undefined
+        if (srcRaw.type === 'file') {
+          source = { type: 'file', path: srcRaw.path, text: { value: '', start: 0, end: 0 } }
+        } else if (srcRaw.type === 'symbol') {
+          source = { type: 'symbol', path: srcRaw.path, name: srcRaw.name, kind: srcRaw.kind, range: srcRaw.range, text: { value: '', start: 0, end: 0 } }
+        } else if (srcRaw.type === 'resource') {
+          source = { type: 'resource', clientName: srcRaw.clientName, uri: srcRaw.uri, text: { value: '', start: 0, end: 0 } }
+        }
+        promptParts.push({ type: 'file', mime: ref.mime, url: ref.url, filename: ref.filename, source })
+      }
+    }
     if (text) promptParts.push({ type: 'text', text })
     if (input.agent) promptParts.push({ type: 'agent', name: input.agent })
 
@@ -336,6 +354,11 @@ export function useChat(
     if (input.attachments?.length) {
       for (const att of input.attachments) {
         userParts.push({ id: nextId(), type: 'file', file: { mime: att.mime, url: att.url, filename: att.filename } })
+      }
+    }
+    if (input.references?.length) {
+      for (const ref of input.references) {
+        userParts.push({ id: nextId(), type: 'file', file: { mime: ref.mime, url: ref.url, filename: ref.filename } })
       }
     }
 
@@ -436,6 +459,7 @@ export function useChat(
                   ? status : null
                 sessionStatus.value = mapped as SessionStatusType
               },
+              onSessionUpdate,
             )
           } catch (error: unknown) {
             if (abortCtl.signal.aborted || isAbortError(error)) throw error
@@ -468,23 +492,47 @@ export function useChat(
 
       streamState.promptDispatched = true
 
-      // Fire the prompt (async — config.json must have agent.build.model as fallback)
+      // Fire the prompt or command
       const sessionNs = asRecord(currentClient.session)
-      if (typeof sessionNs.promptAsync !== 'function') throw new Error('SDK client missing session.promptAsync()')
-      const promptPayload: Record<string, unknown> = {
-        sessionID: currentSid,
-        parts: promptParts,
-      }
-      // Model comes from config.json global `model` — no need to pass in body.
-      // Variant (thinking depth) is passed if the user selected one.
-      if (currentVariant) promptPayload.variant = currentVariant
 
-      const promptResult = await (sessionNs.promptAsync as (params: unknown, options?: unknown) => Promise<unknown>)(
-        promptPayload, { signal: abortCtl.signal },
-      )
-      const promptRec = asRecord(promptResult)
-      if (promptRec.error) {
-        throw new Error(extractSdkErrorMessage(promptRec.error, 'Prompt request failed'))
+      if (input.commandRef) {
+        // Command/skill dispatch via session.command()
+        if (typeof sessionNs.command !== 'function') throw new Error('SDK client missing session.command()')
+        const commandPayload: Record<string, unknown> = {
+          sessionID: currentSid,
+          command: input.commandRef.name,
+          arguments: text || undefined,
+        }
+        if (promptParts.some((p) => p.type === 'file')) {
+          commandPayload.parts = promptParts.filter((p) => p.type === 'file')
+        }
+        if (currentVariant) commandPayload.variant = currentVariant
+
+        const cmdResult = await (sessionNs.command as (params: unknown, options?: unknown) => Promise<unknown>)(
+          commandPayload, { signal: abortCtl.signal },
+        )
+        const cmdRec = asRecord(cmdResult)
+        if (cmdRec.error) {
+          throw new Error(extractSdkErrorMessage(cmdRec.error, 'Command request failed'))
+        }
+      } else {
+        // Regular prompt dispatch via session.promptAsync()
+        if (typeof sessionNs.promptAsync !== 'function') throw new Error('SDK client missing session.promptAsync()')
+        const promptPayload: Record<string, unknown> = {
+          sessionID: currentSid,
+          parts: promptParts,
+        }
+        // Model comes from config.json global `model` — no need to pass in body.
+        // Variant (thinking depth) is passed if the user selected one.
+        if (currentVariant) promptPayload.variant = currentVariant
+
+        const promptResult = await (sessionNs.promptAsync as (params: unknown, options?: unknown) => Promise<unknown>)(
+          promptPayload, { signal: abortCtl.signal },
+        )
+        const promptRec = asRecord(promptResult)
+        if (promptRec.error) {
+          throw new Error(extractSdkErrorMessage(promptRec.error, 'Prompt request failed'))
+        }
       }
       promptAccepted = true
       streamState.completionArmed = true
@@ -521,7 +569,10 @@ export function useChat(
 
   async function send(input: PromptInput) {
     const text = input.text.trim()
-    if ((!text && !input.attachments?.length) || isStreaming.value) return
+    const hasAttachments = Boolean(input.attachments?.length)
+    const hasReferences = Boolean(input.references?.length)
+    const hasCommand = Boolean(input.commandRef)
+    if ((!text && !hasAttachments && !hasReferences && !hasCommand) || isStreaming.value) return
     if (activeStreamDone) {
       await activeStreamDone.catch(() => undefined)
       if (isStreaming.value) return

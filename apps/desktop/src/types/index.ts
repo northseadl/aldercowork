@@ -16,5 +16,16 @@ export interface SidebarNavItem {
   shortcut?: string
 }
 
+// Runtime error protocol — shared between main.ts (emitter) and App.vue (receiver)
+export const RUNTIME_ERROR_EVENT = 'aldercowork:runtime-error'
+export type RuntimeErrorSource = 'vue' | 'window' | 'promise' | 'router'
+export interface RuntimeErrorDetail {
+  source: RuntimeErrorSource
+  message: string
+  stack?: string
+  timestamp: string
+}
+
 export type { ChatThreadMessage, SkillPanelSkill }
 export type { SessionSummary, RichMessage } from '../stores/session'
+

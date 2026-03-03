@@ -93,8 +93,13 @@ const props = withDefaults(
   display: flex;
   align-items: center;
   gap: var(--sp);
-  -webkit-app-region: no-drag;
   min-width: 0;
+}
+
+/* Only interactive widgets opt out of drag — empty space remains draggable */
+.header-center :deep(.ws-picker),
+.breadcrumb {
+  -webkit-app-region: no-drag;
 }
 
 .breadcrumb {

@@ -10,7 +10,8 @@ set -euo pipefail
 
 REPO="sst/opencode"
 VERSION="${1:-}"
-BINARIES_DIR="$(cd "$(dirname "$0")/../apps/desktop/src-tauri" && pwd)"
+BINARIES_DIR="$(cd "$(dirname "$0")/../apps/desktop/src-tauri/binaries" 2>/dev/null && pwd || echo "$(pwd)/binaries")"
+mkdir -p "$BINARIES_DIR"
 
 # Determine target triple
 detect_target() {

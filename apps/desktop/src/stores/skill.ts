@@ -107,6 +107,13 @@ export const useSkillStore = defineStore('skill', () => {
     }
   }
 
+  // Workspace scope activation depends on current workspace path.
+  // Reconcile when workspace changes to avoid stale toggles in the UI.
+  watch(activePath, () => {
+    if (!loaded.value) return
+    void reconcileActivations()
+  })
+
   /** Activate a skill in the given scope */
   async function activateSkill(skillId: string, scope: SkillActivationScope): Promise<void> {
     activating.value = true

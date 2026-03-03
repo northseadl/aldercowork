@@ -193,7 +193,6 @@ function migrateFromLocalStorage(): PersistedSettings | null {
         if (!raw) return null
 
         const settings = parseSettings(raw)
-        // Clear legacy key after successful migration
         localStorage.removeItem(LEGACY_STORAGE_KEY)
         return settings
     } catch {
@@ -227,7 +226,6 @@ export const useSettingsStore = defineStore('settings', () => {
             const settings = parseSettings(fileContent)
             applySettings(settings)
         } else {
-            // Check for legacy localStorage data and migrate
             const migrated = migrateFromLocalStorage()
             if (migrated) {
                 applySettings(migrated)
@@ -336,8 +334,6 @@ export const useSettingsStore = defineStore('settings', () => {
     function setDefaultProvider(id: string) {
         defaultProvider.value = id
     }
-
-
 
     function markConfigured() {
         configured.value = true

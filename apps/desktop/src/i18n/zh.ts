@@ -11,6 +11,7 @@ const zh = {
         breadcrumb: '面包屑导航',
         recentSessions: '最近会话',
         deleteSession: '删除会话',
+        newSession: '新建会话',
     },
 
     // --- Header ---
@@ -55,6 +56,9 @@ const zh = {
             type: '类型',
             pattern: '匹配范围',
             hint: '点击“确定”允许一次，点击“取消”拒绝。',
+            allowOnce: '允许一次',
+            allowAlways: '始终允许',
+            reject: '拒绝',
         },
         tools: {
             statusPending: '排队中',
@@ -94,6 +98,16 @@ const zh = {
             maxTotalSizeReached: '附件总大小已达上限',
             readFailed: '读取附件失败，请重试。',
         },
+        reference: {
+            searchPlaceholder: '搜索文件或符号…',
+            noResults: '未找到匹配项',
+            navigate: '导航',
+            confirm: '选择',
+            dismiss: '关闭',
+            addReference: '引用文件 (@)',
+            file: '文件',
+            symbol: '符号',
+        },
         tokens: {
             input: '输入 Token',
             output: '输出 Token',
@@ -131,6 +145,7 @@ const zh = {
         searchNoResults: '未找到匹配的技能。',
         clearSearch: '清除搜索',
         removeConfirm: '确定要移除技能 {name} 吗？此操作不可撤销。',
+        removeConfirmTitle: '移除技能',
         activation: {
             global: '全局',
             workspace: '工作区',
@@ -161,9 +176,9 @@ const zh = {
             archiveHint: '选择 .zip、.tar.gz 或 .tgz 格式的技能压缩包。压缩包内需包含 SKILL.md 文件。',
             selectFile: '选择文件',
             importing: '导入中…',
-            gitHint: '输入 Git 仓库地址（https:// 或 git@），将执行浅克隆。',
+            gitHint: '输入 Git 仓库地址（https:// 或 git@）。支持子目录链接，如 GitHub 的 /tree/main/path/to/skill。',
             gitUrlLabel: '仓库地址',
-            gitUrlPlaceholder: 'https://github.com/user/my-skill.git',
+            gitUrlPlaceholder: 'https://github.com/user/repo 或 …/tree/main/skills/my-skill',
             clone: '克隆导入',
             cloning: '克隆中…',
             successArchive: '技能 {name} 已从压缩包导入。',
@@ -195,7 +210,35 @@ const zh = {
     // --- Runbooks ---
     runbooks: {
         title: '运行手册',
-        emptyDesc: '已固化的工作流将在此显示。',
+        panelTitle: '运行手册',
+        panelSubtitle: '像写笔记一样创建可复用的结构化指令，用 @skill 引用技能，用 Todo 追踪进度。',
+        create: '新建手册',
+        created: '运行手册已创建',
+        edit: '编辑',
+        preview: '预览',
+        delete: '删除',
+        deleted: '运行手册已删除',
+        deleteConfirmTitle: '删除运行手册',
+        deleteConfirm: '确定要删除 {name} 吗？此操作不可撤销。',
+        untitled: '未命名手册',
+        clickToRename: '点击重命名',
+        searchLabel: '搜索',
+        searchPlaceholder: '按名称或内容搜索…',
+        resultCount: '{count} 个手册',
+        saving: '保存中…',
+        noMatch: '没有匹配的手册。',
+        clearSearch: '清除搜索',
+        listLabel: '手册列表',
+        editorLabel: '手册编辑器',
+        emptyDesc: '还没有运行手册。创建你的第一个吧。',
+        emptyContent: '空白内容，开始编写…',
+        createFirst: '创建第一个运行手册',
+        selectOrCreate: '选择一个手册查看，或创建新手册。',
+        placeholder: '# 我的运行手册\n\n- [ ] 用 @code-review 审查变更\n- [ ] 用 @adb-mysql 验证迁移\n- [ ] 汇总报告',
+        editorHint: '使用 @skill-name 引用技能，使用 - [ ] 创建待办项。按 ⌘+Enter 切换勾选。',
+        sendToChat: '发送到对话',
+        sentToChat: '已发送到对话',
+        sendFailed: '发送失败，请确认引擎已就绪。',
     },
 
     // --- Settings ---
@@ -291,6 +334,18 @@ const zh = {
         starting: '启动中…',
         connected: '已连接',
         error: '错误',
+    },
+
+    // --- Updater ---
+    updater: {
+        available: '新版本 {version} 可用',
+        downloading: '正在下载更新… ({progress}%)',
+        ready: '更新已就绪',
+        readyDesc: '重启应用以完成更新。',
+        download: '下载更新',
+        restart: '立即重启',
+        dismiss: '稍后',
+        checkFailed: '检查更新失败',
     },
 
     // --- Common ---

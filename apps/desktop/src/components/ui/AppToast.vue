@@ -47,7 +47,7 @@ const { t } = useI18n()
 <style scoped>
 .toast-container {
   position: fixed;
-  top: calc(56px + var(--sp) * 2); /* Header height + spacing */
+  top: calc(var(--header-h) + var(--sp) * 2);
   right: calc(var(--sp) * 4);
   z-index: 9999;
   display: flex;
@@ -94,7 +94,7 @@ const { t } = useI18n()
 }
 
 .toast-success .toast-icon { color: var(--brand); }
-.toast-error .toast-icon { color: #ef4444; }
+.toast-error .toast-icon { color: var(--color-error); }
 .toast-info .toast-icon { color: var(--text-3); }
 
 .toast-message {

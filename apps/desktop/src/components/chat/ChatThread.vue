@@ -70,14 +70,7 @@ const formattedMessages = computed<FormattedMessage[]>(() => {
       visibleParts.push(vp)
     }
 
-    // Fallback: if no parts but we have legacy content string
-    if (!hasText && message.content) {
-      hasText = true
-      visibleParts.push({
-        part: { id: `${message.id}-legacy`, type: 'text', text: message.content },
-        vtype: 'text',
-      })
-    }
+
 
     const modelLabel = message.modelInfo
       ? `${message.modelInfo.providerID} · ${message.modelInfo.modelID}`
@@ -189,20 +182,7 @@ onMounted(() => { void scrollToBottom(true) })
             </div>
           </template>
 
-          <!-- Legacy skill cards (backward compat — no parts available) -->
-          <div v-if="message.visibleParts.every(vp => vp.vtype !== 'tool') && message.skills?.length" class="skill-cards">
-            <SkillCard
-              v-for="skill in message.skills"
-              :key="skill.id"
-              :id="skill.id"
-              :name="skill.name"
-              :status="skill.status"
-              :summary="skill.summary"
-              :input="skill.input"
-              :output="skill.output"
-              :icon="skill.icon"
-            />
-          </div>
+
 
           <!-- Token stats (for assistant messages) -->
           <TokenStats

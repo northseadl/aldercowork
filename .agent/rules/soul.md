@@ -16,6 +16,7 @@
 - **Modal focus containment**: 任何阻断式弹层都必须具备 focus trap、初始焦点与焦点恢复，防止键盘焦点穿透背景。
 - **Incremental DOM for streaming**: 流式内容禁止使用 innerHTML 全量替换（CSS 动画每帧重启）；必须用 DOM diff（morphdom/vdom）做增量 patch + TypeWriter buffer 做自适应速率释放，保证旧节点稳定、新节点渐显。
 - **Backpressured streaming renders**: 流式消费者必须 await 一个“帧级 commit barrier”（rAF 调度 + paint 后 yield），让事件摄入速度不可能跑赢浏览器绘制；“节流直接 return 但不 yield”会把更新压成 burst，造成卡顿与节奏失真。
+- **UI intent parity**: 交互可用态（按钮可点/快捷键可发）必须与执行入口 guard 条件一致，禁止“前端显示可执行但 handler 直接 return”的静默失败。
 
 ## 代码哲学 (Code Philosophy)
 - **NLOC mindset**: 优先复用生态能力，减少自研样板与不可维护代码。
@@ -38,3 +39,5 @@
 - **Unbounded reactive collection**: 在 UI 层直接全量渲染与缓存增长型数组（消息/附件）会线性放大内存与重绘成本；应做限额、裁剪或虚拟化。
 - **Leaky global delegate**: 全局 `addEventListener` 无幂等 guard/卸载句柄会在 HMR 或重复挂载后触发多次副作用；必须成对注册与注销。
 - **Throttle-without-yield**: 在流式 UI 中节流渲染但不 yield（继续在同一 task 消费事件）会导致 UI 长时间不 paint，最终一次性跳帧；应使用共享的 awaitable commit barrier（rAF + post-paint yield）提供背压。
+- **Lossy config shadow state**: 用布尔/枚举影子态（如 `hasKey=true`）代替真实配置值做变更探测，会漏掉“值变了但影子不变”的关键事件（如密钥轮换）；应以真实配置 hash/revision 作为重启与同步触发源。
+- **Route-hop volatile payload**: 跨路由只依赖 `window.dispatchEvent` 传递一次性负载会因组件尚未挂载而丢失；必须提供 durable handoff（sessionStorage/store）兜底。

@@ -77,7 +77,7 @@ const displayLabel = () => {
 }
 
 .is-starting .ks-dot__core {
-  background: #f59e0b;
+  background: var(--color-warning);
 }
 
 .is-stopped .ks-dot__core {
@@ -85,8 +85,8 @@ const displayLabel = () => {
 }
 
 .is-error .ks-dot__core {
-  background: #ef4444;
-  box-shadow: 0 0 6px rgba(239, 68, 68, .4);
+  background: var(--color-error);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-error) 40%, transparent);
 }
 
 /* Expanding ring animation for "starting" state */
@@ -94,7 +94,7 @@ const displayLabel = () => {
   position: absolute;
   inset: -3px;
   border-radius: var(--r-full);
-  border: 1.5px solid #f59e0b;
+  border: 1.5px solid var(--color-warning);
   animation: ring-expand 1.8s cubic-bezier(0, 0.5, 0.5, 1) infinite;
 }
 
@@ -115,6 +115,6 @@ const displayLabel = () => {
 }
 
 .is-running .ks-label { color: var(--text-2); }
-.is-error .ks-label { color: #ef4444; }
+.is-error .ks-label { color: var(--color-error); }
 </style>
 

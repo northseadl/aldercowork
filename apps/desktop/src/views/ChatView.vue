@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 
 import { ChatThread } from '../components/chat'
 import ModelPicker from '../components/chat/ModelPicker.vue'
-import { useChat, useClient, useToast } from '../composables'
+import ReferencePopover from '../components/chat/ReferencePopover.vue'
+import ReferenceStrip from '../components/chat/ReferenceStrip.vue'
+import { useChat, useClient, useConfirm, useReference, useToast } from '../composables'
 import { useKernel } from '../composables/useKernel'
 import { useSessionStore } from '../stores/session'
-import { useSettingsStore } from '../stores/settings'
 import { useWorkspaceStore } from '../stores/workspace'
 import { useI18n } from '../i18n'
+import { RUNBOOK_DRAFT_STORAGE_KEY, RUNBOOK_SEND_EVENT } from '../constants/runbook'
 
 import type { ChatThreadMessage } from '../components/chat'
 import type { PermissionDecision, PermissionRequest } from '../composables'
@@ -17,11 +19,11 @@ import type { FileAttachment } from '../stores/session'
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
-const settingsStore = useSettingsStore()
 const workspaceStore = useWorkspaceStore()
 const toast = useToast()
+const { confirmPermission } = useConfirm()
 
-const { port: kernelPort, status: kernelStatus } = useKernel()
+const { port: kernelPort, status: kernelStatus, restart: restartKernel } = useKernel()
 const { client: sdkClient } = useClient(kernelPort, computed(() => workspaceStore.activePath))
 
 watch(sdkClient, (c) => sessionStore.setClient(c), { immediate: true })
@@ -32,21 +34,8 @@ const activeSessionId = computed(() => sessionStore.activeSessionId)
 const modelPickerRef = ref<InstanceType<typeof ModelPicker> | null>(null)
 const modelVariant = computed(() => modelPickerRef.value?.currentVariant ?? null)
 
-function formatPermissionPattern(pattern?: string | string[]): string {
-  if (!pattern) return '-'
-  return Array.isArray(pattern) ? pattern.join(', ') : pattern
-}
-
 async function resolvePermissionRequest(request: PermissionRequest): Promise<PermissionDecision> {
-  const lines = [
-    t('chat.permission.requestTitle'),
-    `${t('chat.permission.permission')}: ${request.title}`,
-    `${t('chat.permission.type')}: ${request.type}`,
-    `${t('chat.permission.pattern')}: ${formatPermissionPattern(request.pattern)}`,
-    '',
-    t('chat.permission.hint'),
-  ]
-  return window.confirm(lines.join('\n')) ? 'once' : 'reject'
+  return confirmPermission(request)
 }
 
 const {
@@ -55,7 +44,14 @@ const {
   streamError,
   send: rawSend,
   cancelStream,
-} = useChat(sdkClient, activeSessionId, modelVariant, resolvePermissionRequest)
+} = useChat(
+  sdkClient,
+  activeSessionId,
+  modelVariant,
+  resolvePermissionRequest,
+  // SSE session.updated → update sidebar title in real time
+  (sid, title) => sessionStore.updateSessionTitle(sid, title),
+)
 
 // ---------------------------------------------------------------------------
 // File attachments
@@ -306,7 +302,75 @@ const displayMessages = computed<ChatThreadMessage[]>(() => {
 
 const inputText = ref('')
 const composeRef = ref<HTMLTextAreaElement | null>(null)
-const canSend = computed(() => (inputText.value.trim().length > 0 || pendingAttachments.value.length > 0) && !isStreaming.value)
+
+// @ Reference system
+const {
+  isOpen: refPopoverOpen,
+  isSearching: refSearching,
+  candidates: refCandidates,
+  selectedIndex: refSelectedIndex,
+  query: refQuery,
+  pendingReferences,
+  pendingCommand,
+  hasReferences,
+  hasCommand,
+  open: openRefPopover,
+  close: closeRefPopover,
+  updateQuery: updateRefQuery,
+  selectCandidate: selectRefCandidate,
+  removeReference,
+  clearCommand,
+  clearReferences,
+  moveSelection: moveRefSelection,
+} = useReference(sdkClient)
+
+const canSend = computed(() => (inputText.value.trim().length > 0 || pendingAttachments.value.length > 0 || hasReferences.value || hasCommand.value) && !isStreaming.value)
+let modelRestartTimer: ReturnType<typeof setTimeout> | null = null
+
+function applyExternalDraft(content: string) {
+  const draft = content.trim()
+  if (!draft) return
+  if (inputText.value.trim()) {
+    inputText.value = `${inputText.value.trimEnd()}\n\n${draft}`
+  } else {
+    inputText.value = draft
+  }
+  if (composeRef.value) {
+    composeRef.value.style.height = 'auto'
+    composeRef.value.style.height = Math.min(composeRef.value.scrollHeight, 200) + 'px'
+    composeRef.value.focus()
+  }
+}
+
+function consumeRunbookDraftFromStorage() {
+  try {
+    const draft = window.sessionStorage.getItem(RUNBOOK_DRAFT_STORAGE_KEY)
+    if (!draft) return
+    window.sessionStorage.removeItem(RUNBOOK_DRAFT_STORAGE_KEY)
+    applyExternalDraft(draft)
+  } catch {
+    // Best effort in restricted environments.
+  }
+}
+
+function handleRunbookSendEvent(event: Event) {
+  const detail = (event as CustomEvent<{ content?: string }>).detail
+  if (!detail?.content) return
+  applyExternalDraft(detail.content)
+}
+
+function handleModelChanged() {
+  if (modelRestartTimer) clearTimeout(modelRestartTimer)
+  modelRestartTimer = setTimeout(async () => {
+    if (kernelStatus.value !== 'running' && kernelStatus.value !== 'starting') return
+    cancelStream()
+    try {
+      await restartKernel()
+    } catch (error: unknown) {
+      toast.error(toErrorMessage(error))
+    }
+  }, 250)
+}
 
 function clearPendingAttachments() {
   if (!pendingAttachments.value.length) return
@@ -319,6 +383,7 @@ function clearPendingAttachments() {
 function resetComposeState() {
   inputText.value = ''
   clearPendingAttachments()
+  clearReferences()
   composeError.value = null
 
   if (composeRef.value) {
@@ -350,19 +415,26 @@ watch(
   },
 )
 
+onMounted(() => {
+  window.addEventListener(RUNBOOK_SEND_EVENT, handleRunbookSendEvent as EventListener)
+  consumeRunbookDraftFromStorage()
+})
+
 onBeforeRouteLeave(() => {
   cancelStream()
   resetComposeState()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener(RUNBOOK_SEND_EVENT, handleRunbookSendEvent as EventListener)
+  if (modelRestartTimer) clearTimeout(modelRestartTimer)
   cancelStream()
   resetComposeState()
 })
 
 async function handleSend() {
   const text = inputText.value.trim()
-  if ((!text && !pendingAttachments.value.length) || isStreaming.value) return
+  if ((!text && !pendingAttachments.value.length && !hasReferences.value && !hasCommand.value) || isStreaming.value) return
 
   const activeId = await sessionStore.ensureActiveSession()
   if (!activeId) {
@@ -372,14 +444,22 @@ async function handleSend() {
   }
 
   const attachments = pendingAttachments.value.map((attachment) => ({ ...attachment }))
+  const references = pendingReferences.value.map((ref) => ({ ...ref }))
+  const commandRef = pendingCommand.value ? { ...pendingCommand.value } : undefined
   inputText.value = ''
   clearPendingAttachments()
+  clearReferences()
   composeError.value = null
 
   if (composeRef.value) composeRef.value.style.height = 'auto'
 
   try {
-    await rawSend({ text, attachments: attachments.length > 0 ? attachments : undefined })
+    await rawSend({
+      text,
+      attachments: attachments.length > 0 ? attachments : undefined,
+      references: references.length > 0 ? references : undefined,
+      commandRef,
+    })
   } catch (error) {
     composeError.value = toErrorMessage(error)
     toast.error(composeError.value)
@@ -388,7 +468,7 @@ async function handleSend() {
 
   const session = sessionStore.activeSession
   if (session && (session.title === 'New Session' || session.title === 'Untitled') && text.length > 0) {
-    sessionStore.renameSession(session.id, text.length > 40 ? text.slice(0, 40) + '…' : text)
+    void sessionStore.renameSession(session.id, text.length > 40 ? text.slice(0, 40) + '…' : text)
   }
   sessionStore.touchSession(sessionStore.activeSessionId)
   await nextTick()
@@ -396,10 +476,38 @@ async function handleSend() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  // @ reference popover interception
+  if (refPopoverOpen.value) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveRefSelection(1); return }
+    if (e.key === 'ArrowUp') { e.preventDefault(); moveRefSelection(-1); return }
+    if (e.key === 'Enter') { e.preventDefault(); selectRefByIndex(); return }
+    if (e.key === 'Escape') { e.preventDefault(); closeRefPopover(); return }
+  }
+
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     void handleSend()
   }
+}
+
+function selectRefByIndex() {
+  const candidate = refCandidates.value[refSelectedIndex.value]
+  if (candidate) {
+    selectRefCandidate(candidate)
+    // Remove the '@...' text fragment from textarea
+    stripAtFragment()
+  }
+}
+
+/** Remove the trailing @query fragment from the textarea. */
+function stripAtFragment() {
+  const textarea = composeRef.value
+  if (!textarea) return
+  const pos = textarea.selectionStart ?? inputText.value.length
+  const before = inputText.value.slice(0, pos)
+  const atIdx = before.lastIndexOf('@')
+  if (atIdx < 0) return
+  inputText.value = inputText.value.slice(0, atIdx) + inputText.value.slice(pos)
 }
 
 function autoResize(e: Event) {
@@ -407,6 +515,43 @@ function autoResize(e: Event) {
   textarea.style.height = 'auto'
   textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px'
 }
+
+/** Detect @ trigger on input and open reference popover */
+function handleComposeInput(e: Event) {
+  autoResize(e)
+  detectAtTrigger()
+}
+
+function detectAtTrigger() {
+  const textarea = composeRef.value
+  if (!textarea) return
+  const pos = textarea.selectionStart ?? inputText.value.length
+  const before = inputText.value.slice(0, pos)
+  const atIdx = before.lastIndexOf('@')
+  if (atIdx < 0 || (atIdx > 0 && before[atIdx - 1] !== ' ' && before[atIdx - 1] !== '\n')) {
+    if (refPopoverOpen.value) closeRefPopover()
+    return
+  }
+  const fragment = before.slice(atIdx + 1)
+  // Don't trigger if there's a space after @
+  if (fragment.includes(' ') || fragment.includes('\n')) {
+    if (refPopoverOpen.value) closeRefPopover()
+    return
+  }
+
+  if (!refPopoverOpen.value) {
+    openRefPopover(fragment)
+  } else {
+    updateRefQuery(fragment)
+  }
+}
+
+function handleRefSelect(candidate: import('../composables/useReference').ReferenceCandidate) {
+  selectRefCandidate(candidate)
+  stripAtFragment()
+  composeRef.value?.focus()
+}
+
 
 function formatTime(iso: string): string {
   try {
@@ -508,6 +653,14 @@ function attachmentDisplayName(att: FileAttachment): string {
             <button type="button" class="attachment-remove" @click="removeAttachment(idx)" :aria-label="t('chat.file.remove')">×</button>
           </div>
         </div>
+        <!-- Reference preview strip -->
+        <ReferenceStrip
+          v-if="hasReferences || hasCommand"
+          :references="pendingReferences"
+          :command="pendingCommand"
+          @remove-reference="removeReference"
+          @clear-command="clearCommand"
+        />
 
         <textarea
           ref="composeRef"
@@ -517,7 +670,7 @@ function attachmentDisplayName(att: FileAttachment): string {
           rows="1"
           :disabled="kernelStatus !== 'running' || isStreaming"
           @keydown="handleKeydown"
-          @input="autoResize"
+          @input="handleComposeInput"
           @paste="handlePaste"
         />
 
@@ -526,7 +679,19 @@ function attachmentDisplayName(att: FileAttachment): string {
             <ModelPicker
               ref="modelPickerRef"
               :client="sdkClient"
+              @model-changed="handleModelChanged"
             />
+            <button
+              class="omnibar-tool-btn"
+              :title="t('chat.reference.addReference')"
+              :disabled="kernelStatus !== 'running'"
+              @click="openRefPopover('')"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+              </svg>
+            </button>
             <button
               class="omnibar-tool-btn"
               :title="t('chat.attachFile')"
@@ -557,7 +722,21 @@ function attachmentDisplayName(att: FileAttachment): string {
             </svg>
           </button>
         </div>
+
+        <!-- Reference popover: positioned above the omnibar -->
+        <ReferencePopover
+          :is-open="refPopoverOpen"
+          :is-searching="refSearching"
+          :candidates="refCandidates"
+          :selected-index="refSelectedIndex"
+          :query="refQuery"
+          @update:query="updateRefQuery"
+          @select="handleRefSelect"
+          @close="closeRefPopover"
+          @move="moveRefSelection"
+        />
       </div>
+
       <div class="compose-hint">{{ t('chat.hint') }}</div>
     </div>
   </section>
@@ -619,12 +798,12 @@ function attachmentDisplayName(att: FileAttachment): string {
 }
 
 .chat-empty__status.is-starting .chat-empty__dot {
-  background: #f59e0b;
+  background: var(--color-warning);
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
 .chat-empty__status.is-error .chat-empty__dot {
-  background: #ef4444;
+  background: var(--color-error);
 }
 
 .streaming-indicator {
@@ -655,7 +834,7 @@ function attachmentDisplayName(att: FileAttachment): string {
   margin: 0 auto;
   padding: 8px calc(var(--sp) * 4);
   font-size: var(--text-micro);
-  color: #ef4444;
+  color: var(--color-error);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -701,6 +880,7 @@ function attachmentDisplayName(att: FileAttachment): string {
 }
 
 .omnibar {
+  position: relative;
   max-width: 680px;
   margin: 0 auto;
   display: flex;
@@ -774,8 +954,8 @@ function attachmentDisplayName(att: FileAttachment): string {
 }
 
 .attachment-remove:hover {
-  color: #ef4444;
-  background: color-mix(in srgb, #ef4444 10%, transparent);
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
 }
 
 .omnibar-field {
@@ -842,7 +1022,7 @@ function attachmentDisplayName(att: FileAttachment): string {
   border: 0;
   border-radius: var(--r-xl);
   background: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -864,9 +1044,9 @@ function attachmentDisplayName(att: FileAttachment): string {
 
 .omnibar-send.is-streaming:hover:not(:disabled) {
   opacity: 1;
-  color: #ef4444;
-  border-color: #ef4444;
-  background: color-mix(in srgb, #ef4444 10%, transparent);
+  color: var(--color-error);
+  border-color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
 }
 
 .compose-hint {

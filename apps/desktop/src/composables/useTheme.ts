@@ -1,37 +1,41 @@
-import { ref, watchEffect } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 
-type Theme = 'dark' | 'light'
+/** Three modes: explicit dark/light or system-follow (default) */
+export type ThemePreference = 'system' | 'dark' | 'light'
+export type ResolvedTheme = 'dark' | 'light'
 
 const STORAGE_KEY = 'cw-t'
-const FALLBACK_THEME: Theme = 'light'
 
-const theme = ref<Theme>(resolveInitialTheme())
+// ── Singleton state (module-level) ──
+const preference = ref<ThemePreference>(readStoredPreference() ?? 'system')
+const systemTheme = ref<ResolvedTheme>(detectSystemTheme())
+let mediaQuery: MediaQueryList | null = null
 let synced = false
 
-function resolveInitialTheme(): Theme {
-  if (typeof window === 'undefined') {
-    return FALLBACK_THEME
-  }
+/** The actually applied theme — derived from preference + system state */
+const resolved = computed<ResolvedTheme>(() =>
+  preference.value === 'system' ? systemTheme.value : preference.value,
+)
 
-  const storedTheme = readStoredTheme()
-  if (storedTheme) {
-    return storedTheme
-  }
+// ── Internal helpers ──
 
+function detectSystemTheme(): ResolvedTheme {
+  if (typeof window === 'undefined') return 'light'
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
-function readStoredTheme(): Theme | null {
+function readStoredPreference(): ThemePreference | null {
+  if (typeof window === 'undefined') return null
   try {
-    const value = window.localStorage.getItem(STORAGE_KEY)
-
-    return value === 'dark' || value === 'light' ? value : null
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (raw === 'dark' || raw === 'light' || raw === 'system') return raw
+    return null
   } catch {
     return null
   }
 }
 
-function persistTheme(value: Theme) {
+function persistPreference(value: ThemePreference) {
   try {
     window.localStorage.setItem(STORAGE_KEY, value)
   } catch {
@@ -39,27 +43,49 @@ function persistTheme(value: Theme) {
   }
 }
 
-function syncTheme() {
-  if (typeof document === 'undefined') {
-    return
-  }
-
-  document.documentElement.dataset.theme = theme.value
-  persistTheme(theme.value)
+function applyToDocument(theme: ResolvedTheme) {
+  if (typeof document === 'undefined') return
+  document.documentElement.dataset.theme = theme
 }
+
+function handleSystemChange(e: MediaQueryListEvent) {
+  systemTheme.value = e.matches ? 'dark' : 'light'
+}
+
+// ── Public API ──
 
 export function useTheme() {
   if (!synced && typeof window !== 'undefined') {
+    // Listen for OS theme changes
+    mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    mediaQuery.addEventListener('change', handleSystemChange)
+
+    // Reactive sync: whenever resolved theme changes, update DOM + persist preference
     watchEffect(() => {
-      syncTheme()
+      applyToDocument(resolved.value)
+      persistPreference(preference.value)
     })
 
     synced = true
   }
 
-  function toggle() {
-    theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  function setPreference(next: ThemePreference) {
+    preference.value = next
   }
 
-  return { theme, toggle }
+  /** Cycle: system → dark → light → system */
+  function toggle() {
+    const order: ThemePreference[] = ['system', 'dark', 'light']
+    const idx = order.indexOf(preference.value)
+    preference.value = order[(idx + 1) % order.length]
+  }
+
+  return {
+    /** User's raw preference (system | dark | light) */
+    preference,
+    /** The actually applied theme — always 'dark' | 'light' */
+    theme: resolved,
+    setPreference,
+    toggle,
+  }
 }

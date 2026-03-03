@@ -190,15 +190,15 @@
 }
 
 .hljs-string {
-  color: #d4a054;
+  color: var(--syntax-string);
 }
 
 .hljs-function .hljs-title {
-  color: #6eb8cc;
+  color: var(--syntax-function);
 }
 
 .hljs-title.function_ {
-  color: #6eb8cc;
+  color: var(--syntax-function);
 }
 
 .hljs-comment {
@@ -206,19 +206,19 @@
 }
 
 .hljs-number {
-  color: #b07cd8;
+  color: var(--syntax-number);
 }
 
 .hljs-literal {
-  color: #e78a64;
+  color: var(--syntax-literal);
 }
 
 .hljs-built_in {
-  color: #6eb8cc;
+  color: var(--syntax-function);
 }
 
 .hljs-type {
-  color: #6eb8cc;
+  color: var(--syntax-function);
 }
 
 .hljs-attr {
@@ -239,8 +239,8 @@
 }
 
 .hljs-deletion {
-  color: #ef4444;
-  background: color-mix(in srgb, #ef4444 10%, transparent);
+  color: var(--color-error);
+  background: color-mix(in srgb, var(--color-error) 10%, transparent);
 }
 
 /* ── Streaming fade-in (Codex-style) ── */

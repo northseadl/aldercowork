@@ -4,17 +4,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import './design/index.css'
 import router from './router'
-
-const RUNTIME_ERROR_EVENT = 'aldercowork:runtime-error'
-
-type RuntimeErrorSource = 'vue' | 'window' | 'promise' | 'router'
-
-interface RuntimeErrorDetail {
-  source: RuntimeErrorSource
-  message: string
-  stack?: string
-  timestamp: string
-}
+import { RUNTIME_ERROR_EVENT, type RuntimeErrorDetail, type RuntimeErrorSource } from './types'
 
 function normalizeError(error: unknown): Error {
   if (error instanceof Error) return error
@@ -26,30 +16,26 @@ function normalizeError(error: unknown): Error {
   }
 }
 
-function emitRuntimeError(detail: RuntimeErrorDetail) {
-  window.dispatchEvent(
-    new CustomEvent<RuntimeErrorDetail>(RUNTIME_ERROR_EVENT, {
-      detail,
-    }),
-  )
-}
-
 function reportRuntimeError(source: RuntimeErrorSource, error: unknown, info?: unknown) {
   const normalized = normalizeError(error)
   console.error(`[runtime:${source}]`, normalized, info)
 
-  emitRuntimeError({
-    source,
-    message: normalized.message || 'Unknown runtime error',
-    stack: normalized.stack,
-    timestamp: new Date().toISOString(),
-  })
+  window.dispatchEvent(
+    new CustomEvent<RuntimeErrorDetail>(RUNTIME_ERROR_EVENT, {
+      detail: {
+        source,
+        message: normalized.message || 'Unknown runtime error',
+        stack: normalized.stack,
+        timestamp: new Date().toISOString(),
+      },
+    }),
+  )
 }
 
-const rootElement = document.documentElement
-if (!rootElement.dataset.theme) {
-  rootElement.dataset.theme = 'dark'
-}
+// Theme is initialized by useTheme composable (single-writer pattern).
+// The first `useTheme()` call sets up the reactive DOM sync & OS listener.
+import { useTheme } from './composables/useTheme'
+useTheme()
 
 const app = createApp(App)
 

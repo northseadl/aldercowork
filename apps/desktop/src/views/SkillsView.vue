@@ -5,11 +5,12 @@ import { storeToRefs } from 'pinia'
 import { SkillDetail, SkillImportDialog, SkillInspectOverlay, SkillListItem } from '../components/skills'
 import type { SkillActivationScope } from '../components/skills'
 import { useI18n } from '../i18n'
-import { useToast } from '../composables'
+import { useConfirm, useToast } from '../composables'
 import { useSkillStore } from '../stores/skill'
 
 const { t } = useI18n()
 const toast = useToast()
+const { confirm } = useConfirm()
 const skillStore = useSkillStore()
 
 const {
@@ -77,10 +78,13 @@ const handleImportGit = async (url: string) => {
 }
 
 const handleRemoveSkill = async (skillId: string) => {
-  const confirmed = window.confirm(
-    t('skills.removeConfirm').replace('{name}', skillId),
-  )
-  if (!confirmed) return
+  const decision = await confirm({
+    title: t('skills.removeConfirmTitle'),
+    message: t('skills.removeConfirm').replace('{name}', skillId),
+    confirmLabel: t('skills.detail.removeAction'),
+    variant: 'danger',
+  })
+  if (decision !== 'confirm') return
 
   try {
     await skillStore.removeSkill(skillId)

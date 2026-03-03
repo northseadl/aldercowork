@@ -31,14 +31,14 @@ const { t } = useI18n()
   gap: 8px;
   padding: 8px 12px;
   border-radius: var(--r-md);
-  background: color-mix(in srgb, #f59e0b 8%, transparent);
-  border: 1px solid color-mix(in srgb, #f59e0b 25%, var(--border));
+  background: var(--color-warning-subtle);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 25%, var(--border));
   margin: var(--sp) 0;
 }
 
 .retry-icon {
   flex-shrink: 0;
-  color: #f59e0b;
+  color: var(--color-warning);
 }
 
 .retry-text {

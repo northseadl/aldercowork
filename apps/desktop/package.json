@@ -16,6 +16,8 @@
     "@opencode-ai/sdk": "^1.2.15",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-http": "^2.5.7",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.0",
     "highlight.js": "^11.11.0",
     "markdown-it": "^14.1.0",
     "morphdom": "^2.7.8",

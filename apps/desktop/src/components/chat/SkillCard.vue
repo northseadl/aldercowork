@@ -165,7 +165,7 @@ const detailsRef = ref<HTMLElement | null>(null)
 }
 
 .skill-card.is-failed {
-  border-color: color-mix(in srgb, #ef4444 55%, var(--border));
+  border-color: color-mix(in srgb, var(--color-error) 55%, var(--border));
 }
 
 .sk-header {
@@ -191,7 +191,7 @@ const detailsRef = ref<HTMLElement | null>(null)
 }
 
 .skill-card.is-failed .sk-icon {
-  color: #ef4444;
+  color: var(--color-error);
 }
 
 .is-spinning {
@@ -255,8 +255,8 @@ const detailsRef = ref<HTMLElement | null>(null)
 }
 
 .sk-badge.failed {
-  background: color-mix(in srgb, #ef4444 12%, transparent);
-  color: #ef4444;
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+  color: var(--color-error);
 }
 
 .sk-toggle {

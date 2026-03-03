@@ -1,18 +1,15 @@
 <script setup lang="ts">
 import { useI18n, type Locale } from '../../i18n'
+import { useTheme, type ThemePreference } from '../../composables/useTheme'
 
 const { t, locale, setLocale } = useI18n()
+const { preference, setPreference } = useTheme()
 
-const THEME_KEY = 'cw-t'
-
-function getTheme(): 'dark' | 'light' {
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'
-}
-
-function setTheme(mode: 'dark' | 'light') {
-  document.documentElement.dataset.theme = mode
-  localStorage.setItem(THEME_KEY, mode)
-}
+const themeOptions: { id: ThemePreference; labelKey: string }[] = [
+  { id: 'system', labelKey: 'settings.theme.system' },
+  { id: 'dark', labelKey: 'settings.theme.dark' },
+  { id: 'light', labelKey: 'settings.theme.light' },
+]
 
 const languages: { id: Locale; label: string }[] = [
   { id: 'zh', label: '中文' },
@@ -28,21 +25,26 @@ const languages: { id: Locale; label: string }[] = [
       <span class="st__label">{{ t('settings.theme.mode') }}</span>
       <div class="st__toggles">
         <button
+          v-for="opt in themeOptions"
+          :key="opt.id"
           class="st__toggle"
-          :class="{ 'is-active': getTheme() === 'dark' }"
-          @click="setTheme('dark')"
+          :class="{ 'is-active': preference === opt.id }"
+          @click="setPreference(opt.id)"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <!-- System monitor icon -->
+          <svg v-if="opt.id === 'system'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+            <line x1="8" y1="21" x2="16" y2="21" />
+            <line x1="12" y1="17" x2="12" y2="21" />
+          </svg>
+
+          <!-- Moon icon -->
+          <svg v-else-if="opt.id === 'dark'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
-          {{ t('settings.theme.dark') }}
-        </button>
-        <button
-          class="st__toggle"
-          :class="{ 'is-active': getTheme() === 'light' }"
-          @click="setTheme('light')"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+
+          <!-- Sun icon -->
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="5" />
             <line x1="12" y1="1" x2="12" y2="3" />
             <line x1="12" y1="21" x2="12" y2="23" />
@@ -53,7 +55,8 @@ const languages: { id: Locale; label: string }[] = [
             <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
           </svg>
-          {{ t('settings.theme.light') }}
+
+          {{ t(opt.labelKey) }}
         </button>
       </div>
     </div>
