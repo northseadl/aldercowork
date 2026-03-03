@@ -74,6 +74,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_OVERRIDE: ${{ matrix.target }}
         run: bash ../../../scripts/download-kernel.sh
 
       - name: Cargo check

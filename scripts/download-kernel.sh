@@ -59,7 +59,12 @@ asset_tokens() {
   esac
 }
 
-TARGET="$(detect_target)"
+# Allow override for cross-compilation (CI: TARGET_OVERRIDE=x86_64-apple-darwin)
+if [ -n "${TARGET_OVERRIDE:-}" ]; then
+  TARGET="$TARGET_OVERRIDE"
+else
+  TARGET="$(detect_target)"
+fi
 TOKENS="$(asset_tokens "$TARGET")"
 TOKEN1="$(echo "$TOKENS" | awk '{print $1}')"
 TOKEN2="$(echo "$TOKENS" | awk '{print $2}')"
