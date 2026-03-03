@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pre-push — 分支保护
+# =============================================================================
+# 1. 禁止 force push 到 main 和 develop
+# 2. 推送到 main 前提示确认（生产分支）
+#
+# Install: git config core.hooksPath .githooks
+# =============================================================================
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+REMOTE="$1"
+PROTECTED_BRANCHES="main develop"
+
+# Detect force push (--force / --force-with-lease)
+# Parent process cmdline contains --force or -f
+PARENT_CMD=$(ps -o args= -p $PPID 2>/dev/null || echo "")
+
+for branch in $PROTECTED_BRANCHES; do
+  # Check if we're pushing to a protected branch
+  while read local_ref local_oid remote_ref remote_oid; do
+    if echo "$remote_ref" | grep -q "refs/heads/$branch"; then
+      # Block force push
+      if echo "$PARENT_CMD" | grep -qE '\-\-force|\-f '; then
+        echo -e "${RED}[pre-push]${RESET} 禁止对 ${BOLD}$branch${RESET} 分支执行 force push！"
+        exit 1
+      fi
+
+      # Warn when pushing to main (production)
+      if [ "$branch" = "main" ]; then
+        echo -e "${YELLOW}[pre-push]${RESET} 即将推送到 ${BOLD}main${RESET}（生产分支）。"
+        echo -e "  通常应通过 develop → main 的 PR 合入。"
+        echo -e "  如需继续，请在 3 秒内按 Ctrl+C 取消。"
+        sleep 3
+      fi
+    fi
+  done
+done
+
+echo -e "${GREEN}[pre-push]${RESET} 分支保护检查通过 ✓"
