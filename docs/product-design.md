@@ -10,7 +10,7 @@
 
 > *让你的 AI 学会你团队的工作方式，并在整个团队中一致执行*
 
-基于 [OpenCode](https://github.com/anomalyco/opencode) 构建的跨平台 AI 协作桌面应用。面向普通用户、团队和企业，将 AI 能力封装为可管理、可分发、可复用的 Skills，让 AI 和 Skill 生态面向组织易用化和标准化。
+基于 [OpenCode](https://github.com/anomalyco/opencode) 构建的桌面 AI 协作应用（支持 macOS 与 Windows）。面向普通用户、团队和企业，将 AI 能力封装为可管理、可分发、可复用的 Skills，让 AI 和 Skill 生态面向组织易用化和标准化。
 
 ### 核心差异化
 

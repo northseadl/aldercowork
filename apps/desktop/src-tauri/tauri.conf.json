@@ -43,19 +43,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "linux": {
-      "deb": {
-        "depends": [
-          "libwebkit2gtk-4.1-0",
-          "libgtk-3-0",
-          "libsoup-3.0-0"
-        ],
-        "section": "utils"
-      },
-      "appimage": {
-        "bundleMediaFramework": false
-      }
-    },
     "macOS": {
       "minimumSystemVersion": "10.15"
     },

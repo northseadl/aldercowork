@@ -44,7 +44,7 @@ gh pr create --base main --head develop --title "release: v0.2.0"
 git checkout main && git pull
 git tag v0.2.0
 git push origin v0.2.0
-# → GitHub Actions 自动构建 4 平台 + 发布到 Releases
+# → GitHub Actions 自动构建 3 个目标（macOS arm64/x64 + Windows x64）并发布到 Releases
 ```
 
 ### 紧急修复
@@ -93,7 +93,7 @@ git checkout develop && git cherry-pick <commit-hash>
 feat(skill): 新增 Git 子目录导入支持
 fix: 修复 Windows 归档解压路径问题
 refactor: 提取 skill.rs 模块，main.rs 瘦身 816 行
-ci: 添加 4 平台矩阵构建
+ci: 添加 3 目标矩阵构建（macOS arm64/x64 + Windows x64）
 ```
 
 ## Git Hooks

@@ -2,7 +2,7 @@
 
 > **让 AI 成为你团队的标准工作方式**
 
-基于 [OpenCode](https://github.com/anomalyco/opencode) 构建的跨平台 AI 协作桌面应用。面向普通用户和团队，将 AI 能力封装为可管理、可分发、可复用的 Skills，让 AI 和 Skill 生态面向组织易用化和标准化。
+基于 [OpenCode](https://github.com/anomalyco/opencode) 构建的桌面 AI 协作应用（支持 macOS 与 Windows）。面向普通用户和团队，将 AI 能力封装为可管理、可分发、可复用的 Skills，让 AI 和 Skill 生态面向组织易用化和标准化。
 
 <p align="center">
   <img src="design/screenshot.png" alt="AlderCowork Screenshot" width="720" />
