@@ -107,8 +107,13 @@ token1, token2 = '${TOKEN1}', '${TOKEN2}'
 candidates = []
 for a in assets:
     name = a['name'].lower()
-    # Skip checksums, SBOMs
-    if 'checksum' in name or 'sbom' in name:
+    # Skip non-CLI assets
+    if 'checksum' in name or 'sbom' in name or '.sig' in name:
+        continue
+    if 'desktop' in name:
+        continue
+    # Skip variant builds (we want the standard build)
+    if 'baseline' in name or 'musl' in name:
         continue
     # Must be an archive
     if not (name.endswith('.tar.gz') or name.endswith('.zip')):
@@ -117,19 +122,19 @@ for a in assets:
         candidates.append(a)
 
 if not candidates:
-    # Try aarch64 alias
+    # Fallback: try with baseline variant
     for a in assets:
         name = a['name'].lower()
-        if 'checksum' in name or 'sbom' in name:
+        if 'desktop' in name or '.sig' in name or 'checksum' in name:
             continue
         if not (name.endswith('.tar.gz') or name.endswith('.zip')):
             continue
-        if token1 in name and ('aarch64' in name if token2 == 'arm64' else 'amd64' in name if token2 == 'x86_64' else False):
+        if token1 in name and token2 in name:
             candidates.append(a)
 
 if candidates:
-    # Prefer .tar.gz over .zip
-    best = sorted(candidates, key=lambda a: (0 if a['name'].endswith('.tar.gz') else 1))[0]
+    # Prefer .zip over .tar.gz (avoid .app.tar.gz confusion)
+    best = sorted(candidates, key=lambda a: (0 if a['name'].endswith('.zip') else 1))[0]
     print(best['browser_download_url'])
 else:
     print('')
