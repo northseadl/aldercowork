@@ -13,25 +13,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  publish-tauri:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
-            target: aarch64-apple-darwin
-            bundle_targets: dmg
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            bundle_targets: dmg
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            bundle_targets: deb,appimage
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            bundle_targets: nsis,msi
+          - platform: macos-14
+            args: '--target aarch64-apple-darwin'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: windows-latest
+            args: ''
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.platform }}
 
     steps:
       - uses: actions/checkout@v4
@@ -39,27 +35,22 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || matrix.platform == 'macos-latest' && 'x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri -> target
-          shared-key: release-${{ matrix.target }}
 
       - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+        if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libsoup-3.0-dev \
-            javascriptcoregtk-4.1 \
-            libfuse2
+            patchelf
 
       - uses: pnpm/action-setup@v4
         with:
@@ -78,225 +69,26 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_OVERRIDE: ${{ matrix.target }}
+          TARGET_OVERRIDE: ${{ matrix.platform == 'macos-14' && 'aarch64-apple-darwin' || matrix.platform == 'macos-latest' && 'x86_64-apple-darwin' || matrix.platform == 'ubuntu-22.04' && 'x86_64-unknown-linux-gnu' || 'x86_64-pc-windows-msvc' }}
         run: bash ../../../scripts/download-kernel.sh
 
-      # ---------------------------------------------------------------
-      # macOS Code Signing & Notarization
-      # Requires these repository secrets:
-      #   APPLE_CERTIFICATE          — Base64-encoded .p12 Developer ID certificate
-      #   APPLE_CERTIFICATE_PASSWORD — Password for the .p12 file
-      #   APPLE_SIGNING_IDENTITY     — e.g. "Developer ID Application: Your Name (TEAM_ID)"
-      #   APPLE_ID                   — Apple ID email for notarytool
-      #   APPLE_PASSWORD             — App-specific password for notarytool
-      #   APPLE_TEAM_ID              — 10-character Team ID
-      # ---------------------------------------------------------------
-      - name: Import macOS signing certificate
-        if: runner.os == 'macOS'
+      - uses: tauri-apps/tauri-action@v0
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # macOS signing (optional)
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        run: |
-          if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "::warning::No APPLE_CERTIFICATE secret set — skipping code signing"
-            exit 0
-          fi
-          CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(openssl rand -hex 12)
-
-          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security import $CERTIFICATE_PATH -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security set-key-partition-list -S apple-tool:,apple: \
-            -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-
-      - name: Verify sidecar binary
-        shell: bash
-        run: |
-          echo "=== Binaries dir ==="
-          ls -la apps/desktop/src-tauri/binaries/
-          SIDECAR="apps/desktop/src-tauri/binaries/opencode-${{ matrix.target }}"
-          [[ "${{ matrix.target }}" == *windows* ]] && SIDECAR="${SIDECAR}.exe"
-          if [ ! -f "$SIDECAR" ]; then
-            echo "::error::Sidecar not found: $SIDECAR"
-            exit 1
-          fi
-          chmod +x "$SIDECAR"
-          file "$SIDECAR"
-          echo "Sidecar verified: $SIDECAR ($(du -h "$SIDECAR" | awk '{print $1}'))"
-
-      - name: Setup linuxdeploy (AppImage)
-        if: runner.os == 'Linux'
-        run: |
-          # GHA runners lack FUSE — extract and run linuxdeploy AppImage
-          curl -sL -o /tmp/linuxdeploy https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x /tmp/linuxdeploy
-          # Make it available
-          sudo mv /tmp/linuxdeploy /usr/local/bin/linuxdeploy
-          echo "linuxdeploy installed"
-
-      - name: Build Tauri app
-        working-directory: apps/desktop
-        shell: bash
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
-          # Windows signing (only if set)
-          TAURI_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          TAURI_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-          NO_STRIP: true
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-        run: |
-          BUNDLES="${{ matrix.bundle_targets }}"
-
-          # macOS: use real cert if available, otherwise ad-hoc signing
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            if [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
-              export APPLE_SIGNING_IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
-              export APPLE_ID="${{ secrets.APPLE_ID }}"
-              export APPLE_PASSWORD="${{ secrets.APPLE_PASSWORD }}"
-              export APPLE_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
-            else
-              echo "::warning::No Apple certificate — using ad-hoc signing"
-              export APPLE_SIGNING_IDENTITY="-"
-            fi
-          fi
-
-          pnpm tauri build --target ${{ matrix.target }} --bundles ${BUNDLES}
-
-      - name: Collect artifacts
-        id: artifacts
-        shell: bash
-        run: |
-          ARTIFACT_DIR="artifacts"
-          mkdir -p "$ARTIFACT_DIR"
-
-          TARGET="${{ matrix.target }}"
-          BUNDLE_DIR="apps/desktop/src-tauri/target/${TARGET}/release/bundle"
-
-          # macOS .dmg
-          find "$BUNDLE_DIR" -name "*.dmg" -exec cp {} "$ARTIFACT_DIR/" \; 2>/dev/null || true
-
-          # Linux .deb and .AppImage
-          find "$BUNDLE_DIR" -name "*.deb" -exec cp {} "$ARTIFACT_DIR/" \; 2>/dev/null || true
-          find "$BUNDLE_DIR" -name "*.AppImage" -exec cp {} "$ARTIFACT_DIR/" \; 2>/dev/null || true
-
-          # Windows .msi and .exe (NSIS)
-          find "$BUNDLE_DIR" -name "*.msi" -exec cp {} "$ARTIFACT_DIR/" \; 2>/dev/null || true
-          find "$BUNDLE_DIR" -path "*/nsis/*.exe" -exec cp {} "$ARTIFACT_DIR/" \; 2>/dev/null || true
-
-          # Tauri updater signatures (.sig files)
-          find "$BUNDLE_DIR" -name "*.sig" -exec cp {} "$ARTIFACT_DIR/" \; 2>/dev/null || true
-
-          echo "Collected artifacts:"
-          ls -lah "$ARTIFACT_DIR/"
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
-          name: aldercowork-${{ matrix.target }}
-          path: artifacts/*
-          if-no-files-found: error
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: List release assets
-        run: ls -lahR release-assets/
-
-      - name: Generate updater manifest (latest.json)
-        shell: bash
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          REPO="${GITHUB_REPOSITORY}"
-
-          # Build platforms JSON
-          PLATFORMS="{}"
-
-          add_platform() {
-            local plat_key="$1"
-            local sig_file="$2"
-            local url="$3"
-
-            if [ -f "$sig_file" ]; then
-              SIG=$(cat "$sig_file")
-              PLATFORMS=$(echo "$PLATFORMS" | python3 -c "
-          import json, sys
-          p = json.load(sys.stdin)
-          p['$plat_key'] = {'signature': '''$SIG''', 'url': '$url'}
-          print(json.dumps(p))
-          ")
-            fi
-          }
-
-          # macOS ARM64
-          for f in release-assets/AlderCowork*.dmg.sig; do
-            [ -f "$f" ] || continue
-            base=$(basename "${f%.sig}")
-            case "$base" in
-              *aarch64*) add_platform "darwin-aarch64" "$f" "https://github.com/$REPO/releases/download/$GITHUB_REF_NAME/$base" ;;
-              *x86_64*|*x64*)  add_platform "darwin-x86_64"  "$f" "https://github.com/$REPO/releases/download/$GITHUB_REF_NAME/$base" ;;
-            esac
-          done
-
-          # Linux .AppImage
-          for f in release-assets/AlderCowork*.AppImage.sig; do
-            [ -f "$f" ] || continue
-            base=$(basename "${f%.sig}")
-            add_platform "linux-x86_64" "$f" "https://github.com/$REPO/releases/download/$GITHUB_REF_NAME/$base"
-          done
-
-          # Windows NSIS .exe
-          for f in release-assets/AlderCowork*.exe.sig; do
-            [ -f "$f" ] || continue
-            base=$(basename "${f%.sig}")
-            add_platform "windows-x86_64" "$f" "https://github.com/$REPO/releases/download/$GITHUB_REF_NAME/$base"
-          done
-
-          # Windows .msi fallback
-          for f in release-assets/AlderCowork*.msi.sig; do
-            [ -f "$f" ] || continue
-            base=$(basename "${f%.sig}")
-            # Only add if windows-x86_64 not already set (prefer NSIS)
-            echo "$PLATFORMS" | python3 -c "import json,sys; p=json.load(sys.stdin); sys.exit(0 if 'windows-x86_64' not in p else 1)" && \
-              add_platform "windows-x86_64" "$f" "https://github.com/$REPO/releases/download/$GITHUB_REF_NAME/$base"
-          done
-
-          python3 -c "
-          import json
-          manifest = {
-            'version': '$VERSION',
-            'notes': 'See release notes on GitHub.',
-            'pub_date': '$DATE',
-            'platforms': $PLATFORMS
-          }
-          with open('release-assets/latest.json', 'w') as f:
-            json.dump(manifest, f, indent=2)
-          print(json.dumps(manifest, indent=2))
-          "
-
-          echo "Generated latest.json:"
-          cat release-assets/latest.json
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          generate_release_notes: true
-          files: release-assets/*
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: 'AlderCowork ${{ github.ref_name }}'
+          releaseBody: 'See the assets to download and install.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+          includeUpdaterJson: true

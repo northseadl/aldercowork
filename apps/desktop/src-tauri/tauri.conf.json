@@ -73,7 +73,7 @@
       "endpoints": [
         "https://github.com/northseadl/aldercowork/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM3NDcwOTYxQUFFMUFENUYKUldSZnJlR3FZUWxIeDRDZG0rQ2xnRHgvV1h6V0xvelFlUkV3WGgzWU5odldKQ2Q1U1F3dDVYRFoK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFGMUFFNEFBNDExNTk0NzAKUldSd2xCVkJxdVFhcjdERXFIQnNPVk5xcFNHeFpSVnlyZ2R3aHhyOEtDczNsU0dXem1uUmExcC8K",
       "windows": {
         "installMode": "passive"
       }
