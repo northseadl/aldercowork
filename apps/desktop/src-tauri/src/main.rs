@@ -53,7 +53,6 @@ pub struct DataPaths {
 pub fn resolve_data_paths(app: &tauri::AppHandle) -> DataPaths {
     // Tauri provides platform-native paths via its path resolver:
     //   macOS:   ~/Library/Application Support/com.aldercowork.desktop
-    //   Linux:   $XDG_DATA_HOME/com.aldercowork.desktop
     //   Windows: %APPDATA%/com.aldercowork.desktop
     let app_data = app
         .path()

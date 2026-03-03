@@ -7,6 +7,7 @@
 - **前端**: Vue Router 4 + Pinia — 四路由 (`/` Chat, `/skills`, `/runbooks`, `/settings`)
 - **设计系统**: `tokens.css`(dark/light) + `reset.css` + `markdown.css`；双层材质 Shell(Layer0) / Content(Layer1)
 - **SDK**: 官方 `@opencode-ai/sdk` 直连，`@aldercowork/sdk` 当前未消费
+- **发布目标**: 仅支持 macOS (arm64/x64) 与 Windows (x64)，CI/Release 不再包含 Linux
 
 ## 核心数据流
 ```text
@@ -35,6 +36,7 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 | Kernel Data Isolation | XDG_CONFIG_HOME + XDG_DATA_HOME 重定向到 `kernel-state/opencode/` | 与用户 `~/.config/opencode` 完全隔离 |
 | Skill Three-Layer Model | 存储(`{APP_DATA}/skills/`) → 全局激活(symlink 到 `{kernel-state}/opencode/.agents/skills/{leaf}`) → 工作区激活(symlink 到 `{workspace}/.agents/skills/{leaf}`) | 利用 OpenCode 原生 `.agents` 代理兼容目录发现；一个技能可同时激活到全局和工作区 |
 | Skill Discovery Bridge | 启动时在 config.json 注入 `skills.paths = ["{kernel-state}/opencode/.agents/skills"]` | **XDG 隔离只影响 config/data，不影响技能发现**（OpenCode 硬编码 `os.homedir()/.agents/skills/`）。需要 `skills.paths` 桥接 |
+| Release Target Scope | GitHub Actions CI/Release 仅保留 `macos-14`(arm64) / `macos-latest`(x64 target) / `windows-latest`(x64)，移除 Linux runner 与 Linux bundles | 降低发布矩阵复杂度，消除 Linux 打包链路引入的不稳定性 |
 | Skill Activation IPC | `activate_skill(id, scope, ws_path)` / `deactivate_skill` / `get_skill_activations` — Rust 管理 symlink 创建/删除 | 安装 ≠ 激活；删除自动清理两个范围的 symlink |
 | Skill Recursive Discovery | `discover_skills_recursive` 递归扫描含 SKILL.md 的目录，ID 为相对路径（如 `monorepo/sub-skill`） | 支持 monorepo 布局 |
 | Skill Import | 压缩包通过 Rust crate 解压（`zip` / `flate2` + `tar`）+ hoist；Git 支持普通仓库 URL（`--depth=1` 浅克隆）和平台子目录 URL（`/tree/{branch}/{path}` → sparse-checkout + hoist）。`sanitize_skill_name` 清理目录名，子目录 URL 从 subpath 叶节点推导名称 | 纯 Rust 归档解压，跨平台（Windows 无 unzip/tar 命令）；用户可直接粘贴 GitHub 子目录链接 |
