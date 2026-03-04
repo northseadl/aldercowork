@@ -1,6 +1,6 @@
 [package]
 name = "aldercowork-desktop"
-version = "0.1.0"
+version = "0.1.2"
 description = "AlderCowork desktop shell powered by Tauri"
 authors = ["AlderCowork Team"]
 edition = "2021"

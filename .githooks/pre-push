@@ -63,10 +63,38 @@ for ref_line in "${PUSHED_REFS[@]}"; do
   read -r local_ref local_oid remote_ref remote_oid <<< "$ref_line"
 
   if echo "$remote_ref" | grep -qE '^refs/tags/v[0-9]'; then
+    TAG_NAME=$(echo "$remote_ref" | sed 's|refs/tags/||')
+    TAG_VERSION="${TAG_NAME#v}"
+
     if [ -x "$VERSION_CHECK_SCRIPT" ]; then
       echo "$ref_line" | "$VERSION_CHECK_SCRIPT"
     else
       echo -e "${YELLOW}[pre-push]${RESET} 版本检查脚本不存在或不可执行: $VERSION_CHECK_SCRIPT"
+    fi
+
+    # --- Auto-sync version files to match tag ---
+    TAURI_CONF="${REPO_ROOT}/apps/desktop/src-tauri/tauri.conf.json"
+    CARGO_TOML="${REPO_ROOT}/apps/desktop/src-tauri/Cargo.toml"
+    PKG_JSON="${REPO_ROOT}/apps/desktop/package.json"
+
+    CURRENT_TAURI_VERSION=$(grep '"version"' "$TAURI_CONF" | head -1 | sed 's/.*"\([0-9][^"]*\)".*/\1/')
+
+    if [ "$CURRENT_TAURI_VERSION" != "$TAG_VERSION" ]; then
+      echo -e "${YELLOW}[pre-push]${RESET} 版本文件不同步: tauri.conf.json=${CURRENT_TAURI_VERSION} ≠ tag=${TAG_VERSION}"
+      echo -e "${GREEN}[pre-push]${RESET} 自动同步版本号到 ${BOLD}${TAG_VERSION}${RESET} ..."
+
+      # Update version files (use awk for Cargo.toml — BSD sed lacks 0, address)
+      sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"${TAG_VERSION}\"/" "$TAURI_CONF" && rm -f "${TAURI_CONF}.bak"
+      awk -v ver="$TAG_VERSION" '/^version = / && !done { sub(/version = "[^"]*"/, "version = \"" ver "\""); done=1 } {print}' "$CARGO_TOML" > "${CARGO_TOML}.tmp" && mv "${CARGO_TOML}.tmp" "$CARGO_TOML"
+      sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"${TAG_VERSION}\"/" "$PKG_JSON" && rm -f "${PKG_JSON}.bak"
+
+      # Amend the tagged commit and re-tag
+      git add "$TAURI_CONF" "$CARGO_TOML" "$PKG_JSON"
+      ALLOW_DIRECT_COMMIT=1 git commit --amend --no-edit --no-verify
+      TAG_MSG=$(git tag -l --format='%(contents)' "$TAG_NAME")
+      git tag -f -a "$TAG_NAME" -m "${TAG_MSG:-$TAG_NAME}"
+
+      echo -e "${GREEN}[pre-push]${RESET} 版本文件已同步，commit 已 amend，tag 已重建 ✓"
     fi
   fi
 done
