@@ -23,7 +23,7 @@ const isUserScrolledUp = ref(false)
 // Visible part — a part that should be rendered in the UI
 // ---------------------------------------------------------------------------
 
-type VisiblePartType = 'text' | 'reasoning' | 'file' | 'tool' | 'patch' | 'retry' | 'unknown'
+type VisiblePartType = 'text' | 'reasoning' | 'file' | 'tool' | 'patch' | 'retry' | 'command' | 'unknown'
 
 interface VisiblePart {
   part: MessagePart
@@ -44,7 +44,7 @@ interface FormattedMessage extends ChatThreadMessage {
 function classifyPartType(type: string | undefined): VisiblePartType | null {
   if (!type) return null
   if (HIDDEN_TYPES.has(type)) return null
-  if (type === 'text' || type === 'reasoning' || type === 'file' || type === 'tool' || type === 'patch' || type === 'retry') {
+  if (type === 'text' || type === 'reasoning' || type === 'file' || type === 'tool' || type === 'patch' || type === 'retry' || type === 'command') {
     return type
   }
   return 'unknown'
@@ -175,6 +175,14 @@ onMounted(() => { void scrollToBottom(true) })
               :retry="vp.part.retry"
             />
 
+            <!-- Command/skill reference chip -->
+            <div v-else-if="vp.vtype === 'command'" class="command-chip">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+              <span class="command-chip__name">{{ vp.part.command?.name }}</span>
+            </div>
+
             <!-- Unknown part (debug fallback) -->
             <div v-else-if="vp.vtype === 'unknown'" class="unknown-part">
               <span class="unknown-part-label">{{ t('chat.unknownPart.label') }}: {{ vp.part.type }}</span>
@@ -251,6 +259,31 @@ onMounted(() => { void scrollToBottom(true) })
 
 .compose-slot {
   flex-shrink: 0;
+}
+
+/* ── Command/skill chip in user message ── */
+.command-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 7px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--color-warning, #f59e0b) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning, #f59e0b) 25%, transparent);
+  font: var(--fw-medium) var(--text-micro) / 1 var(--font);
+  color: var(--text-1);
+  margin: 4px 0;
+}
+
+.command-chip svg {
+  color: var(--color-warning, #f59e0b);
+  flex-shrink: 0;
+}
+
+.command-chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Thinking dots (before text arrives) ── */

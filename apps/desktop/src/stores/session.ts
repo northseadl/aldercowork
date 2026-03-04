@@ -20,6 +20,7 @@ export type PartType =
   | 'retry'
   | 'compaction'
   | 'subtask'
+  | 'command'
 
 export type ToolStatus = 'pending' | 'running' | 'completed' | 'failed'
 
@@ -88,6 +89,12 @@ export interface MessagePart {
     prompt: string
     description: string
     agent: string
+  }
+
+  // command (skill/command reference in user message)
+  command?: {
+    name: string
+    source: string
   }
 }
 

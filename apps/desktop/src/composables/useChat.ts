@@ -361,6 +361,9 @@ export function useChat(
         userParts.push({ id: nextId(), type: 'file', file: { mime: ref.mime, url: ref.url, filename: ref.filename } })
       }
     }
+    if (input.commandRef) {
+      userParts.push({ id: nextId(), type: 'command', command: { name: input.commandRef.name, source: input.commandRef.source } })
+    }
 
     const userMsg: RichMessage = {
       id: nextId(), role: 'user', parts: userParts, createdAt: nowISO(), streaming: false,
@@ -490,9 +493,10 @@ export function useChat(
       // Attach a handler immediately to prevent transient unhandledrejection before awaited joins.
       void streamConsumerTask.catch(() => undefined)
 
-      streamState.promptDispatched = true
-
-      // Fire the prompt or command
+      // Fire the prompt or command.
+      // IMPORTANT: promptDispatched MUST be set AFTER the HTTP call returns
+      // to prevent the SSE consumer from processing stale session events
+      // (e.g. previous assistant messages) while the request is in flight.
       const sessionNs = asRecord(currentClient.session)
 
       if (input.commandRef) {
@@ -534,6 +538,8 @@ export function useChat(
           throw new Error(extractSdkErrorMessage(promptRec.error, 'Prompt request failed'))
         }
       }
+      // Now the backend has accepted our request — safe to process SSE events
+      streamState.promptDispatched = true
       promptAccepted = true
       streamState.completionArmed = true
 
