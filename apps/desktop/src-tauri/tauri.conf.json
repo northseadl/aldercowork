@@ -32,9 +32,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": "v1Compatible",
+    "createUpdaterArtifacts": true,
     "externalBin": [
-      "opencode"
+      "binaries/opencode"
     ],
     "icon": [
       "icons/32x32.png",
@@ -43,19 +43,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "linux": {
-      "deb": {
-        "depends": [
-          "libwebkit2gtk-4.1-0",
-          "libgtk-3-0",
-          "libsoup-3.0-0"
-        ],
-        "section": "utils"
-      },
-      "appimage": {
-        "bundleMediaFramework": false
-      }
-    },
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
@@ -73,7 +60,7 @@
       "endpoints": [
         "https://github.com/northseadl/aldercowork/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE_WITH_TAURI_PUBKEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZDMjAyNDQyNzVDMEI3QjEKUldTeHQ4QjFRaVFnYkNFYWo1bWtzVHlvWDEyL3M2c1hlWXJocnNYcmg4dHJwajBVRVcxVjUxcUQK",
       "windows": {
         "installMode": "passive"
       }

@@ -28,13 +28,6 @@ detect_target() {
         *)      echo "Unsupported macOS arch: $arch" >&2; exit 1 ;;
       esac
       ;;
-    Linux)
-      case "$arch" in
-        x86_64)  target="x86_64-unknown-linux-gnu" ;;
-        aarch64) target="aarch64-unknown-linux-gnu" ;;
-        *)       echo "Unsupported Linux arch: $arch" >&2; exit 1 ;;
-      esac
-      ;;
     MINGW*|MSYS*|CYGWIN*)
       target="x86_64-pc-windows-msvc"
       ;;
@@ -49,16 +42,21 @@ detect_target() {
 # Map target to GitHub release asset search tokens
 asset_tokens() {
   local target="$1"
+  # OpenCode uses: darwin/windows + x64/arm64 (not x86_64/aarch64)
   case "$target" in
     aarch64-apple-darwin)       echo "darwin arm64" ;;
-    x86_64-apple-darwin)        echo "darwin x86_64" ;;
-    x86_64-unknown-linux-gnu)   echo "linux x86_64" ;;
-    aarch64-unknown-linux-gnu)  echo "linux arm64" ;;
-    x86_64-pc-windows-msvc)     echo "windows x86_64" ;;
+    x86_64-apple-darwin)        echo "darwin x64" ;;
+    x86_64-pc-windows-msvc)     echo "windows x64" ;;
+    *)                          echo "Unsupported target: $target" >&2; exit 1 ;;
   esac
 }
 
-TARGET="$(detect_target)"
+# Allow override for cross-compilation (CI: TARGET_OVERRIDE=x86_64-apple-darwin)
+if [ -n "${TARGET_OVERRIDE:-}" ]; then
+  TARGET="$TARGET_OVERRIDE"
+else
+  TARGET="$(detect_target)"
+fi
 TOKENS="$(asset_tokens "$TARGET")"
 TOKEN1="$(echo "$TOKENS" | awk '{print $1}')"
 TOKEN2="$(echo "$TOKENS" | awk '{print $2}')"
@@ -74,7 +72,13 @@ else
 fi
 
 echo "==> Fetching release from $RELEASE_URL"
-RELEASE_JSON="$(curl -sL -H "Accept: application/vnd.github+json" -H "User-Agent: aldercowork-kernel-downloader" "$RELEASE_URL")"
+
+CURL_ARGS=(-sL -H "Accept: application/vnd.github+json" -H "User-Agent: aldercowork-kernel-downloader")
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  CURL_ARGS+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
+RELEASE_JSON="$(curl "${CURL_ARGS[@]}" "$RELEASE_URL")"
 
 TAG="$(echo "$RELEASE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])" 2>/dev/null || true)"
 if [ -z "$TAG" ]; then
@@ -95,8 +99,13 @@ token1, token2 = '${TOKEN1}', '${TOKEN2}'
 candidates = []
 for a in assets:
     name = a['name'].lower()
-    # Skip checksums, SBOMs
-    if 'checksum' in name or 'sbom' in name:
+    # Skip non-CLI assets
+    if 'checksum' in name or 'sbom' in name or '.sig' in name:
+        continue
+    if 'desktop' in name:
+        continue
+    # Skip variant builds (we want the standard build)
+    if 'baseline' in name or 'musl' in name:
         continue
     # Must be an archive
     if not (name.endswith('.tar.gz') or name.endswith('.zip')):
@@ -105,19 +114,19 @@ for a in assets:
         candidates.append(a)
 
 if not candidates:
-    # Try aarch64 alias
+    # Fallback: try with baseline variant
     for a in assets:
         name = a['name'].lower()
-        if 'checksum' in name or 'sbom' in name:
+        if 'desktop' in name or '.sig' in name or 'checksum' in name:
             continue
         if not (name.endswith('.tar.gz') or name.endswith('.zip')):
             continue
-        if token1 in name and ('aarch64' in name if token2 == 'arm64' else 'amd64' in name if token2 == 'x86_64' else False):
+        if token1 in name and token2 in name:
             candidates.append(a)
 
 if candidates:
-    # Prefer .tar.gz over .zip
-    best = sorted(candidates, key=lambda a: (0 if a['name'].endswith('.tar.gz') else 1))[0]
+    # Prefer .zip over .tar.gz (avoid .app.tar.gz confusion)
+    best = sorted(candidates, key=lambda a: (0 if a['name'].endswith('.zip') else 1))[0]
     print(best['browser_download_url'])
 else:
     print('')

@@ -5,8 +5,10 @@ use tauri_plugin_shell::ShellExt;
 use tokio::time::{sleep, Duration};
 
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
+#[cfg(unix)]
 const STOP_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(unix)]
 const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Serialize)]
@@ -81,7 +83,7 @@ impl KernelManager {
         // Launch sidecar
         let shell = app.shell();
         let mut command = shell
-            .sidecar("opencode")
+            .sidecar("binaries/opencode")
             .map_err(|e| format!("Failed to create sidecar command: {e}"))?
             .args(["serve", "--port", &port.to_string()]);
 
