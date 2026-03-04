@@ -14,27 +14,24 @@ concurrency:
 
 jobs:
   # -----------------------------------------------------------------------
-  # Gate: Version bump validation (runs once before all platform builds)
+  # Gate: Version bump validation
   # -----------------------------------------------------------------------
   version-gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Need full history for tag comparison
+          fetch-depth: 0
           fetch-tags: true
 
       - name: Version bump validation
         shell: bash
         env:
           ALLOW_MAJOR_BUMP: ${{ vars.ALLOW_MAJOR_BUMP || '' }}
-        run: |
-          echo "::group::Version Gate"
-          bash scripts/check-version-bump.sh "${{ github.ref_name }}"
-          echo "::endgroup::"
+        run: bash scripts/check-version-bump.sh "${{ github.ref_name }}"
 
   # -----------------------------------------------------------------------
-  # Build: Multi-platform Tauri release (depends on version gate)
+  # Build: Multi-platform Tauri release
   # -----------------------------------------------------------------------
   publish-tauri:
     needs: version-gate
@@ -103,3 +100,19 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
           includeUpdaterJson: true
+
+  # -----------------------------------------------------------------------
+  # Post: Rename assets to user-friendly names
+  # -----------------------------------------------------------------------
+  rename-assets:
+    needs: publish-tauri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rename release artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: bash scripts/rename-release-assets.sh

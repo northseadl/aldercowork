@@ -76,9 +76,9 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 const CATEGORY_META: Record<string, { icon: string; label: string }> = {
-  command: { icon: '⚡', label: 'Skill / Command' },
-  file: { icon: '📄', label: 'File' },
-  symbol: { icon: '🔷', label: 'Symbol' },
+  command: { icon: 'command', label: 'Skill / Command' },
+  file: { icon: 'file', label: 'File' },
+  symbol: { icon: 'symbol', label: 'Symbol' },
 }
 
 function categoryOf(c: ReferenceCandidate) {
@@ -123,7 +123,19 @@ function categoryOf(c: ReferenceCandidate) {
           :aria-selected="idx === selectedIndex"
           @click="emit('select', candidate)"
         >
-          <span class="ref-popover__item-icon" aria-hidden="true">{{ categoryOf(candidate).icon }}</span>
+          <span class="ref-popover__item-icon" aria-hidden="true">
+            <svg v-if="categoryOf(candidate).icon === 'command'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+            <svg v-else-if="categoryOf(candidate).icon === 'file'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+              <polyline points="13 2 13 9 20 9" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 18 22 12 16 6" />
+              <polyline points="8 6 2 12 8 18" />
+            </svg>
+          </span>
           <span class="ref-popover__item-body">
             <span class="ref-popover__item-label">{{ candidate.label }}</span>
             <span class="ref-popover__item-detail">{{ candidate.detail }}</span>
@@ -233,10 +245,17 @@ function categoryOf(c: ReferenceCandidate) {
 }
 
 .ref-popover__item-icon {
-  font-size: 13px;
   flex-shrink: 0;
   width: 20px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ref-popover__item-icon svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-2);
 }
 
 .ref-popover__item-body {

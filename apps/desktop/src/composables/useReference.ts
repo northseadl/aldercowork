@@ -247,7 +247,7 @@ export function useReference(client: Ref<unknown>) {
                     const searchable = [name, description, ...hints].join(' ').toLowerCase()
                     if (!searchable.includes(lowerQ)) continue
 
-                    const sourceLabel = source === 'skill' ? '⚡ Skill' : source === 'mcp' ? '🔌 MCP' : '📋 Command'
+                    const sourceLabel = source === 'skill' ? 'Skill' : source === 'mcp' ? 'MCP' : 'Command'
                     results.push({
                         category: 'command',
                         label: name,
