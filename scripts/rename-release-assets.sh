@@ -23,11 +23,11 @@ info()  { echo "::notice::$*"; }
 fail()  { echo "::error::$*"; exit 1; }
 
 # ---------------------------------------------------------------------------
-# 1. Find release by tag
+# 1. Find release by tag (including drafts — /releases/tags/ excludes drafts!)
 # ---------------------------------------------------------------------------
-RELEASE_JSON=$(gh api "repos/${REPO}/releases/tags/${TAG}" 2>/dev/null || true)
+RELEASE_JSON=$(gh api "repos/${REPO}/releases" --paginate --jq ".[] | select(.tag_name == \"${TAG}\")" 2>/dev/null || true)
 if [ -z "$RELEASE_JSON" ] || echo "$RELEASE_JSON" | grep -q '"message"'; then
-  fail "找不到 tag ${TAG} 对应的 Release"
+  fail "找不到 tag ${TAG} 对应的 Release（含 draft）"
 fi
 
 RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
@@ -57,11 +57,11 @@ for old_name in "${!RENAME_MAP[@]}"; do
   ASSET_ID=$(echo "$ASSETS_JSON" | jq -r ".[] | select(.name == \"${old_name}\") | .id")
 
   if [ -z "$ASSET_ID" ] || [ "$ASSET_ID" = "null" ]; then
-    echo "⏭️  未找到 ${old_name}，跳过"
+    echo "[skip] 未找到 ${old_name}，跳过"
     continue
   fi
 
-  echo "🔄 ${old_name} → ${new_name} (asset_id: ${ASSET_ID})"
+  echo "[rename] ${old_name} -> ${new_name} (asset_id: ${ASSET_ID})"
   gh api "repos/${REPO}/releases/assets/${ASSET_ID}" \
     --method PATCH \
     --field name="${new_name}" \
