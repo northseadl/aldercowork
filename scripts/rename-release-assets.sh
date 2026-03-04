@@ -34,30 +34,34 @@ RELEASE_ID=$(echo "$RELEASE_JSON" | jq -r '.id')
 info "Release ID: ${RELEASE_ID} (tag: ${TAG})"
 
 # ---------------------------------------------------------------------------
-# 2. Define rename mapping
+# 2. Define rename mapping (paired arrays — bash 3 compatible)
 # ---------------------------------------------------------------------------
-declare -A RENAME_MAP=(
-  ["AlderCowork_${VERSION}_aarch64.dmg"]="AlderCowork_${TAG}_macOS_Apple-Silicon.dmg"
-  ["AlderCowork_${VERSION}_x64.dmg"]="AlderCowork_${TAG}_macOS_Intel.dmg"
-  ["AlderCowork_${VERSION}_x64-setup.nsis.zip"]="AlderCowork_${TAG}_Windows_Setup.zip"
+OLD_NAMES=(
+  "AlderCowork_${VERSION}_aarch64.dmg"
+  "AlderCowork_${VERSION}_x64.dmg"
+  "AlderCowork_${VERSION}_x64-setup.nsis.zip"
+  "AlderCowork_${VERSION}_x64-setup.exe"
 )
-
-# Track the windows rename for latest.json patching
-WINDOWS_OLD_NAME="AlderCowork_${VERSION}_x64-setup.nsis.zip"
-WINDOWS_NEW_NAME="AlderCowork_${TAG}_Windows_Setup.zip"
+NEW_NAMES=(
+  "AlderCowork_${TAG}_macOS_Apple-Silicon.dmg"
+  "AlderCowork_${TAG}_macOS_Intel.dmg"
+  "AlderCowork_${TAG}_Windows_Setup.zip"
+  "AlderCowork_${TAG}_Windows_Setup.exe"
+)
 
 # ---------------------------------------------------------------------------
 # 3. Rename assets via GitHub API
 # ---------------------------------------------------------------------------
 ASSETS_JSON=$(gh api "repos/${REPO}/releases/${RELEASE_ID}/assets" --paginate 2>/dev/null)
 
-for old_name in "${!RENAME_MAP[@]}"; do
-  new_name="${RENAME_MAP[$old_name]}"
+for i in "${!OLD_NAMES[@]}"; do
+  old_name="${OLD_NAMES[$i]}"
+  new_name="${NEW_NAMES[$i]}"
 
   ASSET_ID=$(echo "$ASSETS_JSON" | jq -r ".[] | select(.name == \"${old_name}\") | .id")
 
   if [ -z "$ASSET_ID" ] || [ "$ASSET_ID" = "null" ]; then
-    echo "[skip] 未找到 ${old_name}，跳过"
+    echo "[skip] ${old_name} not found"
     continue
   fi
 
@@ -81,8 +85,9 @@ if [ -n "$LATEST_JSON_ASSET_ID" ] && [ "$LATEST_JSON_ASSET_ID" != "null" ]; then
   gh api "repos/${REPO}/releases/assets/${LATEST_JSON_ASSET_ID}" \
     -H "Accept: application/octet-stream" > "$TMPFILE" 2>/dev/null
 
-  # Replace the old Windows filename with the new one in the URL
-  sed -i.bak "s|${WINDOWS_OLD_NAME}|${WINDOWS_NEW_NAME}|g" "$TMPFILE"
+  # Replace old Windows filenames with new ones in the URL (covers both .exe and .nsis.zip)
+  sed -i.bak "s|AlderCowork_${VERSION}_x64-setup.nsis.zip|AlderCowork_${TAG}_Windows_Setup.zip|g" "$TMPFILE"
+  sed -i.bak "s|AlderCowork_${VERSION}_x64-setup.exe|AlderCowork_${TAG}_Windows_Setup.exe|g" "$TMPFILE"
   rm -f "${TMPFILE}.bak"
 
   # Delete old latest.json asset
