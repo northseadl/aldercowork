@@ -6,7 +6,7 @@
 - **Rust 壳** (`src-tauri/`): sidecar 生命周期 (`kernel.rs`) + IPC/数据路径 (`main.rs`) + Skill 管理/归档/激活 (`skill.rs`) + `DataPaths` 平台目录隔离
 - **前端**: Vue Router 4 + Pinia — 四路由 (`/` Chat, `/skills`, `/runbooks`, `/settings`)
 - **设计系统**: `tokens.css`(dark/light) + `reset.css` + `markdown.css`；双层材质 Shell(Layer0) / Content(Layer1)
-- **SDK**: 官方 `@opencode-ai/sdk` 直连，`@aldercowork/sdk` 当前未消费
+- **SDK**: 官方 `@opencode-ai/sdk/v2/client` 子路径导入（禁止使用 `v2` 入口，会拖入 server.js + node:child_process）
 - **发布目标**: 仅支持 macOS (arm64/x64) 与 Windows (x64)，CI/Release 不再包含 Linux
 
 ## 核心数据流
@@ -33,6 +33,8 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 ## 架构决策
 | 决策 | 说明 | 理由 |
 |---|---|---|
+| SDK Client Subpath | 前端必须使用 `@opencode-ai/sdk/v2/client` 而非 `v2` 导入。`v2/index.js` 会 re-export `server.js`（含 `node:child_process`），Vite 无法 tree-shake → production bundle 白屏 | WebView 非 Node.js 环境 |
+| Sidecar Root Placement | `externalBin: ["opencode"]`，sidecar 放在 `src-tauri/opencode-{triple}`（非 `binaries/` 子目录）。开发模式查找 `src-tauri/opencode-{triple}`，生产 bundle 查找 `Contents/MacOS/opencode` | Tauri bundle 扁平化 sidecar 到 MacOS/ 但 `relative_command_path()` 保留子目录前缀 |
 | Kernel Data Isolation | XDG_CONFIG_HOME + XDG_DATA_HOME 重定向到 `kernel-state/opencode/` | 与用户 `~/.config/opencode` 完全隔离 |
 | Skill Three-Layer Model | 存储(`{APP_DATA}/skills/`) → 全局激活(symlink 到 `{kernel-state}/opencode/.agents/skills/{leaf}`) → 工作区激活(symlink 到 `{workspace}/.agents/skills/{leaf}`) | 利用 OpenCode 原生 `.agents` 代理兼容目录发现；一个技能可同时激活到全局和工作区 |
 | Skill Discovery Bridge | 启动时在 config.json 注入 `skills.paths = ["{kernel-state}/opencode/.agents/skills"]` | **XDG 隔离只影响 config/data，不影响技能发现**（OpenCode 硬编码 `os.homedir()/.agents/skills/`）。需要 `skills.paths` 桥接 |

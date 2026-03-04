@@ -34,7 +34,7 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "externalBin": [
-      "binaries/opencode"
+      "opencode"
     ],
     "icon": [
       "icons/32x32.png",

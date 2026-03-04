@@ -1,6 +1,6 @@
 import { computed, ref, watch, type Ref } from 'vue'
 
-import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2'
+import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client'
 
 /**
  * Resolve fetch implementation.

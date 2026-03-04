@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, shallowRef, watch } from 'vue'
 
-import type { OpencodeClient } from '@opencode-ai/sdk/v2'
+import type { OpencodeClient } from '@opencode-ai/sdk/v2/client'
 
 // ---------------------------------------------------------------------------
 // Part-centric message model — mirrors the OpenCode SDK Part union

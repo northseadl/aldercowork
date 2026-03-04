@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Download OpenCode kernel binary for the current platform.
-# Places it in src-tauri/binaries/ with Tauri sidecar naming convention.
+# Places it in src-tauri/ with Tauri sidecar naming convention.
 #
 # Usage:
 #   ./scripts/download-kernel.sh                # latest release
@@ -10,7 +10,7 @@ set -euo pipefail
 
 REPO="sst/opencode"
 VERSION="${1:-}"
-BINARIES_DIR="$(cd "$(dirname "$0")/../apps/desktop/src-tauri/binaries" 2>/dev/null && pwd || echo "$(pwd)/binaries")"
+BINARIES_DIR="$(cd "$(dirname "$0")/../apps/desktop/src-tauri" 2>/dev/null && pwd || echo "$(pwd)")"
 mkdir -p "$BINARIES_DIR"
 
 # Determine target triple
