@@ -13,7 +13,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # -----------------------------------------------------------------------
+  # Gate: Version bump validation (runs once before all platform builds)
+  # -----------------------------------------------------------------------
+  version-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for tag comparison
+          fetch-tags: true
+
+      - name: Version bump validation
+        shell: bash
+        env:
+          ALLOW_MAJOR_BUMP: ${{ vars.ALLOW_MAJOR_BUMP || '' }}
+        run: |
+          echo "::group::Version Gate"
+          bash scripts/check-version-bump.sh "${{ github.ref_name }}"
+          echo "::endgroup::"
+
+  # -----------------------------------------------------------------------
+  # Build: Multi-platform Tauri release (depends on version gate)
+  # -----------------------------------------------------------------------
   publish-tauri:
+    needs: version-gate
     strategy:
       fail-fast: false
       max-parallel: 1

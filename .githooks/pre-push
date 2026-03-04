@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# pre-push — 分支保护
+# pre-push — 分支保护 + 版本号门禁
 # =============================================================================
 # 1. 禁止 force push 到 main 和 develop
 # 2. 推送到 main 前提示确认（生产分支）
+# 3. 推送版本 tag 时校验 SemVer 增量策略
 #
 # Install: git config core.hooksPath .githooks
 # =============================================================================
@@ -17,14 +18,24 @@ RESET='\033[0m'
 
 REMOTE="$1"
 PROTECTED_BRANCHES="main develop"
+REPO_ROOT=$(git rev-parse --show-toplevel)
+
+# Collect all pushed refs
+PUSHED_REFS=()
+while IFS= read -r line; do
+  PUSHED_REFS+=("$line")
+done
 
 # Detect force push (--force / --force-with-lease)
-# Parent process cmdline contains --force or -f
 PARENT_CMD=$(ps -o args= -p $PPID 2>/dev/null || echo "")
 
-for branch in $PROTECTED_BRANCHES; do
-  # Check if we're pushing to a protected branch
-  while read local_ref local_oid remote_ref remote_oid; do
+# ---------------------------------------------------------------------------
+# 1 & 2. Branch protection
+# ---------------------------------------------------------------------------
+for ref_line in "${PUSHED_REFS[@]}"; do
+  read -r local_ref local_oid remote_ref remote_oid <<< "$ref_line"
+
+  for branch in $PROTECTED_BRANCHES; do
     if echo "$remote_ref" | grep -q "refs/heads/$branch"; then
       # Block force push
       if echo "$PARENT_CMD" | grep -qE '\-\-force|\-f '; then
@@ -41,6 +52,23 @@ for branch in $PROTECTED_BRANCHES; do
       fi
     fi
   done
+done
+
+# ---------------------------------------------------------------------------
+# 3. Version tag gate — delegate to check-version-bump.sh
+# ---------------------------------------------------------------------------
+VERSION_CHECK_SCRIPT="${REPO_ROOT}/scripts/check-version-bump.sh"
+
+for ref_line in "${PUSHED_REFS[@]}"; do
+  read -r local_ref local_oid remote_ref remote_oid <<< "$ref_line"
+
+  if echo "$remote_ref" | grep -qE '^refs/tags/v[0-9]'; then
+    if [ -x "$VERSION_CHECK_SCRIPT" ]; then
+      echo "$ref_line" | "$VERSION_CHECK_SCRIPT"
+    else
+      echo -e "${YELLOW}[pre-push]${RESET} 版本检查脚本不存在或不可执行: $VERSION_CHECK_SCRIPT"
+    fi
+  fi
 done
 
 echo -e "${GREEN}[pre-push]${RESET} 分支保护检查通过 ✓"
