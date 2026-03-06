@@ -330,13 +330,27 @@ function skipForNow() {
   background: var(--content);
   cursor: pointer;
   text-align: left;
-  transition: border-color var(--speed-quick), background var(--speed-quick), transform var(--speed-quick);
+  outline: none;
+  transition:
+    border-color var(--speed-quick),
+    background var(--speed-quick),
+    box-shadow var(--speed-quick);
 }
 
 .welcome__provider-btn:hover {
   border-color: var(--brand);
   background: color-mix(in srgb, var(--brand) 4%, var(--content));
-  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 26%, transparent);
+}
+
+.welcome__provider-btn:focus {
+  outline: none;
+}
+
+.welcome__provider-btn:focus-visible {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 5%, var(--content));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--brand) 45%, transparent);
 }
 
 .welcome__provider-name {
