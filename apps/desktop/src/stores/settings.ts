@@ -62,17 +62,17 @@ export const BUILTIN_PROVIDERS: ProviderDefinition[] = [
     { id: 'kimi-for-coding', label: 'Kimi For Coding', envVar: 'KIMI_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, description: 'Kimi K2.5' },
 
     // ── MiniMax ──────────────────────────────────────────────────────
-    { id: 'minimax', label: 'MiniMax (minimax.io)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, description: 'MiniMax M2.5' },
+    { id: 'minimax', label: 'MiniMax (minimax.io)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'global', description: 'MiniMax M2.5' },
     { id: 'minimax-cn', label: 'MiniMax (minimaxi.com)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'cn' },
-    { id: 'minimax-coding-plan', label: 'MiniMax Coding Plan (minimax.io)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'global' },
+    { id: 'minimax-coding-plan', label: 'MiniMax Coding Plan (minimax.io)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, description: 'MiniMax Coding Plan' },
     { id: 'minimax-cn-coding-plan', label: 'MiniMax Coding Plan (minimaxi.com)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'cn' },
 
     // ── China mainland providers ─────────────────────────────────────
-    { id: 'deepseek', label: 'DeepSeek', envVar: 'DEEPSEEK_API_KEY', supportsBaseUrl: true, region: 'cn', featured: true, description: 'DeepSeek V3 / R1' },
+    { id: 'deepseek', label: 'DeepSeek', envVar: 'DEEPSEEK_API_KEY', supportsBaseUrl: true, region: 'cn', description: 'DeepSeek V3 / R1' },
     { id: 'zhipuai', label: 'Zhipu AI', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'cn' },
-    { id: 'zhipuai-coding-plan', label: 'Zhipu AI Coding Plan', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'cn' },
+    { id: 'zhipuai-coding-plan', label: 'Zhipu AI Coding Plan (CN)', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'cn', featured: true, description: 'Zhipu Coding Plan (China)' },
     { id: 'zai', label: 'Z.AI', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'global' },
-    { id: 'zai-coding-plan', label: 'Z.AI Coding Plan', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'global' },
+    { id: 'zai-coding-plan', label: 'Z.AI Coding Plan (Global)', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'global' },
     { id: 'alibaba', label: 'Alibaba', envVar: 'DASHSCOPE_API_KEY', supportsBaseUrl: true, region: 'global' },
     { id: 'alibaba-cn', label: 'Alibaba (China)', envVar: 'DASHSCOPE_API_KEY', supportsBaseUrl: true, region: 'cn' },
     { id: 'siliconflow', label: 'SiliconFlow', envVar: 'SILICONFLOW_API_KEY', supportsBaseUrl: true, region: 'global' },
