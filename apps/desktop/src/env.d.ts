@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-    /** Application mode — 'standalone' (default) or 'enterprise' */
+    /** Startup hint — runtime identity is resolved from the active profile registry */
     readonly VITE_APP_MODE?: string
     readonly VITE_OPEN_SOURCE_SKILL_CATALOG_URL?: string
     readonly VITE_ENTERPRISE_HUB_URL?: string

@@ -13,119 +13,21 @@
 # =============================================================================
 set -euo pipefail
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BOLD='\033[1m'
-RESET='\033[0m'
+HOOK_DIR=$(cd "$(dirname "$0")" && pwd)
+HOOK_NAME="pre-push"
 
-PROTECTED_BRANCHES="main develop"
-REPO_ROOT=$(git rev-parse --show-toplevel)
-cd "$REPO_ROOT"
+# shellcheck source=.githooks/lib/common.sh
+. "${HOOK_DIR}/lib/common.sh"
+# shellcheck source=.githooks/lib/pre-push.sh
+. "${HOOK_DIR}/lib/pre-push.sh"
 
-info() { echo -e "${GREEN}[pre-push]${RESET} $*"; }
-warn() { echo -e "${YELLOW}[pre-push]${RESET} $*"; }
-fail() { echo -e "${RED}[pre-push]${RESET} $*"; exit 1; }
-
-# Collect all pushed refs
-PUSHED_REFS=()
-while IFS= read -r line; do
-  PUSHED_REFS+=("$line")
-done
+setup_repo_root
+load_pushed_refs
 
 if [ "${#PUSHED_REFS[@]}" -eq 0 ]; then
   info "未检测到推送的 refs，跳过检查"
   exit 0
 fi
-
-# Detect force push (--force / --force-with-lease)
-PARENT_CMD=$(ps -o args= -p "${PPID:-}" 2>/dev/null || echo "")
-
-is_all_zero_oid() {
-  local oid="${1:-}"
-  echo "$oid" | grep -qE '^[0]{40}$'
-}
-
-is_non_fast_forward_update() {
-  # Returns 0 when update is non-fast-forward (i.e. force rewrite).
-  local new_oid="${1:-}"
-  local old_oid="${2:-}"
-
-  # Deletion or creation cannot be classified as non-FF here.
-  if is_all_zero_oid "$new_oid" || is_all_zero_oid "$old_oid"; then
-    return 1
-  fi
-
-  # If old is not an ancestor of new, the update is non-fast-forward.
-  if git merge-base --is-ancestor "$old_oid" "$new_oid" 2>/dev/null; then
-    return 1
-  fi
-  return 0
-}
-
-extract_json_version() {
-  # Extract the first `"version": "x.y.z"` occurrence from JSON content.
-  sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1
-}
-
-extract_cargo_package_version() {
-  # Extract version from Cargo.toml [package] section.
-  awk '
-    BEGIN { in_pkg = 0 }
-    /^\[package\]/ { in_pkg = 1; next }
-    /^\[/ { if (in_pkg) exit; next }
-    in_pkg && $0 ~ /^version[[:space:]]*=/ {
-      line = $0
-      sub(/^[^"]*"/, "", line)
-      sub(/".*$/, "", line)
-      if (line != "") { print line; exit }
-    }
-  '
-}
-
-validate_version_files_match_tag() {
-  local tag_name="$1"
-  local tag_version="$2"
-  local target_oid="$3"
-  local commit
-
-  commit=$(git rev-parse "${target_oid}^{commit}" 2>/dev/null || true)
-  if [ -z "$commit" ]; then
-    fail "无法解析 tag push 的目标 commit: ${BOLD}${tag_name}${RESET} (oid=${target_oid})"
-  fi
-
-  local pkg_json tauri_conf cargo_toml
-  pkg_json=$(git show "${commit}:apps/desktop/package.json" 2>/dev/null || true)
-  tauri_conf=$(git show "${commit}:apps/desktop/src-tauri/tauri.conf.json" 2>/dev/null || true)
-  cargo_toml=$(git show "${commit}:apps/desktop/src-tauri/Cargo.toml" 2>/dev/null || true)
-
-  local pkg_ver tauri_ver cargo_ver
-  pkg_ver=$(printf '%s' "$pkg_json" | extract_json_version)
-  tauri_ver=$(printf '%s' "$tauri_conf" | extract_json_version)
-  cargo_ver=$(printf '%s' "$cargo_toml" | extract_cargo_package_version)
-
-  if [ "$pkg_ver" != "$tag_version" ] || [ "$tauri_ver" != "$tag_version" ] || [ "$cargo_ver" != "$tag_version" ]; then
-    fail "$(cat <<EOF
-版本文件未与 tag 对齐（禁止在 hook 中自动改历史）。
-
-tag: ${BOLD}${tag_name}${RESET} → expected ${BOLD}${tag_version}${RESET}
-
-实际（tag push target commit=${commit}）:
-  apps/desktop/package.json: ${pkg_ver:-<missing>}
-  apps/desktop/src-tauri/tauri.conf.json: ${tauri_ver:-<missing>}
-  apps/desktop/src-tauri/Cargo.toml: ${cargo_ver:-<missing>}
-
-修复方式（参考 CI 的 Sync version from tag 步骤）:
-  bash scripts/sync-version-from-tag.sh "${tag_name}"
-
-  git add apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml
-  git commit -m "chore(release): v${tag_version}"
-  git tag -f -a "${tag_name}" -m "${tag_name}"
-  git push -f origin "${tag_name}"
-EOF
-)"
-  fi
-}
 
 # ---------------------------------------------------------------------------
 # 1 & 2. Branch protection
@@ -133,21 +35,13 @@ EOF
 for ref_line in "${PUSHED_REFS[@]}"; do
   read -r local_ref local_oid remote_ref remote_oid <<< "$ref_line"
 
-  for branch in $PROTECTED_BRANCHES; do
+  for branch in "${PROTECTED_BRANCHES[@]}"; do
     if echo "$remote_ref" | grep -q "refs/heads/$branch"; then
-      # Block non-fast-forward updates (force rewrite). This works even when we
-      # can't reliably inspect the parent `git push` flags (e.g. Windows).
       if is_non_fast_forward_update "$local_oid" "$remote_oid"; then
         fail "禁止对 ${BOLD}$branch${RESET} 执行 non-fast-forward 更新（等价于 force rewrite）。
 请通过 PR 合入，或推送到新分支（feat/*, fix/*）。"
       fi
 
-      # Best-effort detection of explicit force flags. Not reliable everywhere.
-      if echo "$PARENT_CMD" | grep -qE '(^|[[:space:]])(-f|--force|--force-with-lease|--force-if-includes)([[:space:]]|$)'; then
-        fail "禁止对 ${BOLD}$branch${RESET} 使用 force push 参数（-f/--force/--force-with-lease）。"
-      fi
-
-      # Warn when pushing to main (production)
       if [ "$branch" = "main" ]; then
         echo -e "${YELLOW}[pre-push]${RESET} 即将推送到 ${BOLD}main${RESET}（生产分支）。"
         echo -e "  通常应通过 develop → main 的 PR 合入。"

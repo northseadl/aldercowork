@@ -11,8 +11,9 @@ import type {
   StagedSkillRecord,
 } from '@aldercowork/skill-schema'
 
-import { APP_MODE, MARKETPLACE_BUILD_CONFIG } from '../config/build'
+import { MARKETPLACE_BUILD_CONFIG } from '../config/build'
 import { getHubToken } from './kernelConfig'
+import { getActiveProfile } from './profile'
 
 export type SkillActivationScope = 'global' | 'workspace'
 
@@ -58,13 +59,21 @@ function joinUrl(base: string, path: string): string {
 }
 
 async function resolveProviderConfig(): Promise<MarketplaceProviderConfig> {
-  if (APP_MODE === 'enterprise') {
+  const activeProfile = await getActiveProfile().catch(() => null)
+
+  if (activeProfile?.kind === 'enterprise') {
+    const enterprise = activeProfile.enterprise
     const authToken = await getHubToken().catch(() => null)
     return {
       source: 'enterprise',
-      label: 'Enterprise Hub',
-      catalogUrl: MARKETPLACE_BUILD_CONFIG.enterpriseHubUrl
-        ? joinUrl(MARKETPLACE_BUILD_CONFIG.enterpriseHubUrl, MARKETPLACE_BUILD_CONFIG.enterpriseCatalogPath)
+      label: enterprise?.organizationName
+        ? `${enterprise.organizationName} Hub`
+        : 'Enterprise Hub',
+      catalogUrl: enterprise?.hubUrl
+        ? joinUrl(
+          enterprise.hubUrl,
+          enterprise.catalogPath || MARKETPLACE_BUILD_CONFIG.enterpriseCatalogPath,
+        )
         : undefined,
       authToken: authToken || undefined,
     }

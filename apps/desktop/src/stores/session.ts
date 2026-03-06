@@ -386,6 +386,14 @@ export const useSessionStore = defineStore('session', () => {
     }
   })
 
+  function resetForProfile() {
+    sessions.value = []
+    activeSessionId.value = ''
+    error.value = null
+    loading.value = false
+    creating.value = false
+  }
+
   return {
     sessions,
     activeSessionId,
@@ -404,6 +412,7 @@ export const useSessionStore = defineStore('session', () => {
     renameSession,
     updateSessionTitle,
     touchSession,
+    resetForProfile,
   }
 })
 

@@ -15,11 +15,18 @@ export function parseToolStatus(v: unknown): ToolStatus | null {
     return null
 }
 
-export function inferToolStatus(explicit: unknown, output: unknown, error: unknown): ToolStatus {
+export function inferToolStatus(
+    explicit: unknown,
+    output: unknown,
+    error: unknown,
+    options: { started?: boolean, previous?: ToolStatus } = {},
+): ToolStatus {
     const parsed = parseToolStatus(explicit)
     if (parsed) return parsed
     if (error !== undefined && error !== null) return 'failed'
     if (output !== undefined && output !== null) return 'completed'
+    if (options.started) return 'running'
+    if (options.previous) return options.previous
     return 'pending'
 }
 
@@ -37,20 +44,20 @@ export function parseToolFromPart(
     const id = asString(part.id) ?? options.fallbackId
     if (!id) return null
     const state = asRecord(part.state)
+    const time = asRecord(state.time)
     const rawInput = state.input ?? part.input ?? part.arguments
     const rawOutput = state.output ?? part.result
     const rawError = state.error
 
     const previous = options.previous
     const explicitStatus = state.status ?? part.status
-    const parsedStatus = parseToolStatus(explicitStatus)
     const rawAttachments = Array.isArray(state.attachments) ? state.attachments : Array.isArray(part.attachments) ? part.attachments : []
+    const started = typeof time.start === 'number' || typeof time.start === 'string'
 
-    const status: ToolStatus = parsedStatus
-        ?? (rawError !== undefined && rawError !== null ? 'failed' : null)
-        ?? (rawOutput !== undefined && rawOutput !== null ? 'completed' : null)
-        ?? previous?.status
-        ?? 'pending'
+    const status = inferToolStatus(explicitStatus, rawOutput, rawError, {
+        started,
+        previous: previous?.status,
+    })
 
     return {
         id,

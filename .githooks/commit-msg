@@ -16,10 +16,11 @@
 # =============================================================================
 set -euo pipefail
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BOLD='\033[1m'
-RESET='\033[0m'
+HOOK_DIR=$(cd "$(dirname "$0")" && pwd)
+HOOK_NAME="commit-msg"
+
+# shellcheck source=.githooks/lib/common.sh
+. "${HOOK_DIR}/lib/common.sh"
 
 COMMIT_MSG_FILE="$1"
 COMMIT_MSG=$(head -1 "$COMMIT_MSG_FILE")
@@ -34,7 +35,7 @@ fi
 PATTERN='^(feat|fix|refactor|perf|docs|style|test|build|ci|chore|revert)(\(.+\))?: .{2,}'
 
 if ! echo "$COMMIT_MSG" | grep -qE "$PATTERN"; then
-  echo -e "${RED}[commit-msg]${RESET} 提交信息不符合 Conventional Commits 规范。
+  fail "提交信息不符合 Conventional Commits 规范。
 
 ${BOLD}格式:${RESET} <type>: <subject>
 
@@ -58,7 +59,6 @@ ${BOLD}示例:${RESET}
 
 ${BOLD}你的提交信息:${RESET} $COMMIT_MSG
 "
-  exit 1
 fi
 
-echo -e "${GREEN}[commit-msg]${RESET} 格式校验通过 ✓"
+info "格式校验通过 ✓"

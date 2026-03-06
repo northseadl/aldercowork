@@ -1,17 +1,20 @@
 <script setup lang="ts">
-import { onBeforeUnmount } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 
 import { useI18n } from '../../i18n'
 import { useSettingsStore, BUILTIN_PROVIDERS, type ProviderDefinition } from '../../stores/settings'
+import { useProfileStore } from '../../stores/profile'
 import { useCredentialStore } from '../../composables/useCredentialStore'
 import { useKernel } from '../../composables/useKernel'
 import ApiKeyInput from './ApiKeyInput.vue'
 
 const { t } = useI18n()
 const settings = useSettingsStore()
+const profileStore = useProfileStore()
 const credentialStore = useCredentialStore()
 const kernel = useKernel()
 let restartTimer: ReturnType<typeof setTimeout> | null = null
+const providersLocked = computed(() => settings.providersLocked)
 
 function getState(id: string) {
   return settings.providers.find((p) => p.id === id)
@@ -30,6 +33,7 @@ function scheduleKernelRestart() {
 }
 
 function onKeySaved(providerId: string, hasKey: boolean) {
+  if (providersLocked.value) return
   const prevHasKey = getState(providerId)?.hasKey ?? false
   settings.markProviderKey(providerId, hasKey)
   // hasKey=true -> true means key rotation; provider state snapshot is unchanged,
@@ -40,6 +44,7 @@ function onKeySaved(providerId: string, hasKey: boolean) {
 }
 
 async function onBaseUrlChange(def: ProviderDefinition, e: Event) {
+  if (providersLocked.value) return
   const value = (e.target as HTMLInputElement).value.trim()
   try {
     await credentialStore.setBaseUrl(def.id, value)
@@ -51,6 +56,7 @@ async function onBaseUrlChange(def: ProviderDefinition, e: Event) {
 }
 
 function onSetDefault(id: string) {
+  if (providersLocked.value) return
   settings.setDefaultProvider(id)
 }
 
@@ -70,6 +76,10 @@ onBeforeUnmount(() => {
   <div class="sp">
     <h2 class="sp__title">{{ t('settings.providers.title') }}</h2>
     <p class="sp__desc">{{ t('settings.providers.desc') }}</p>
+    <div v-if="providersLocked" class="sp__managed-note">
+      {{ t('settings.providers.managed') }}
+      <span v-if="profileStore.activeProfile"> · {{ profileStore.activeProfile.label }}</span>
+    </div>
 
     <div class="sp__list">
       <div
@@ -95,7 +105,11 @@ onBeforeUnmount(() => {
         <div class="sp__card-body">
           <div class="sp__field">
             <span class="sp__field-label">API Key</span>
+            <div v-if="providersLocked" class="sp__managed-value">
+              {{ getState(def.id)?.source === 'hub' ? 'Managed by Hub' : t('settings.providers.notConfigured') }}
+            </div>
             <ApiKeyInput
+              v-else
               :provider-id="def.id"
               :env-var="def.envVar"
               :has-key="getState(def.id)?.hasKey ?? false"
@@ -110,6 +124,7 @@ onBeforeUnmount(() => {
               class="sp__input"
               :value="getState(def.id)?.baseUrl ?? def.defaultBaseUrl ?? ''"
               :placeholder="def.defaultBaseUrl || 'https://api.example.com/v1'"
+              :disabled="providersLocked"
               @change="onBaseUrlChange(def, $event)"
             />
           </div>
@@ -117,7 +132,7 @@ onBeforeUnmount(() => {
           <div v-if="getState(def.id)?.hasKey" class="sp__card-footer">
             <code class="sp__env-hint">{{ def.envVar }}</code>
             <button
-              v-if="settings.defaultProvider !== def.id"
+              v-if="!providersLocked && settings.defaultProvider !== def.id"
               class="sp__set-default"
               @click="onSetDefault(def.id)"
             >{{ t('settings.providers.setDefault') }}</button>
@@ -147,6 +162,15 @@ onBeforeUnmount(() => {
 .sp__list {
   display: grid;
   gap: calc(var(--sp) * 1);
+}
+
+.sp__managed-note {
+  border: 1px solid color-mix(in srgb, var(--brand) 22%, transparent);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  color: var(--text-2);
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  font-size: var(--text-micro);
 }
 
 .sp__card {
@@ -253,6 +277,18 @@ onBeforeUnmount(() => {
 .sp__input:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-subtle);
+}
+
+.sp__managed-value {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-active);
+  color: var(--text-3);
+  font-size: var(--text-micro);
 }
 
 .sp__card-footer {

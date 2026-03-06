@@ -3,8 +3,8 @@
 
 ## 系统架构
 - **Monorepo**: pnpm workspace — `apps/desktop`(Tauri v2 + Vite + Vue 3) + `packages/{kernel-manager, sdk, skill-schema}`
-- **Rust 壳** (`src-tauri/`): sidecar 生命周期 (`kernel.rs`) + IPC/数据路径 (`main.rs`) + Skill 市场/分阶段安装/审计/激活 (`skill.rs`) + `DataPaths` 平台目录隔离
-- **前端**: Vue Router 4 + Pinia — 四路由 (`/` Chat, `/skills`, `/runbooks`, `/settings`)；Skills 域拆为 `installedSkillStore` / `marketplaceSkillStore` / `skillAuditStore`
+- **Rust 壳** (`src-tauri/`): sidecar 生命周期 (`kernel.rs`) + active profile / tenant registry (`profile.rs`) + IPC/数据路径 (`main.rs`) + Skill 市场/分阶段安装/审计/激活 (`skill.rs`)
+- **前端**: Vue Router 4 + Pinia — 四路由 (`/` Chat, `/skills`, `/runbooks`, `/settings`)；全局 profile 由 `profileStore` 管理，Skills 域拆为 `installedSkillStore` / `marketplaceSkillStore` / `skillAuditStore`
 - **设计系统**: `tokens.css`(dark/light) + `reset.css` + `markdown.css`；双层材质 Shell(Layer0) / Content(Layer1)
 - **SDK**: 官方 `@opencode-ai/sdk/v2/client` 子路径导入（禁止使用 `v2` 入口，会拖入 server.js + node:child_process）
 - **发布目标**: 仅支持 macOS (arm64/x64) 与 Windows (x64)，CI/Release 不再包含 Linux
@@ -22,14 +22,25 @@ Kernel: main.rs setup → sidecar `opencode serve --port {random}`
   env: XDG_{CONFIG,DATA}_HOME={kernel-state} + OPENCODE_CLIENT=desktop + provider_env
   readiness: poll /health (仅 HTTP 2xx)
 
+Profile registry:
+  settings/Profile tab → `connect_enterprise_profile` / `switch_active_profile`
+    → Rust profile registry (`global/profile-registry.json`)
+    → resolve_data_paths(activeProfile)
+    → kernel restart + frontend profile-bound store reload
+
 Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
-  ├─ settings.json       ← AlderCowork 配置
-  ├─ runbooks.json       ← 运行手册数据（JSON 数组）
-  ├─ kernel-state/       ← OpenCode 隔离运行时（config.json, DB, skills/ symlinks）
-  ├─ skills/             ← 技能存储库（导入的 SKILL.md 源文件）
-  ├─ skill-staging/      ← 市场下载 / 本地导入后的隔离审查区
-  ├─ audit-reports/      ← `audit-reports/{skill}/{version}.json` 本地审计结果
-  └─ workspace/          ← 默认工作区
+  ├─ global/profile-registry.json
+  └─ profiles/
+      ├─ local/default/
+      │   ├─ settings.json / runbooks.json
+      │   ├─ kernel-state/
+      │   ├─ skills/ / skill-staging/ / audit-reports/
+      │   └─ workspace/
+      └─ enterprise/{hub_hash}/{org_id}/{user_id}/
+          ├─ settings.json / runbooks.json / .hub-token
+          ├─ kernel-state/
+          ├─ skills/ / skill-staging/ / audit-reports/
+          └─ workspace/ (或企业策略固定路径)
 ```
 
 ## 架构决策
@@ -40,11 +51,15 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 | Kernel Data Isolation | XDG_CONFIG_HOME + XDG_DATA_HOME 重定向到 `kernel-state/opencode/` | 与用户 `~/.config/opencode` 完全隔离 |
 | Skill Install Pipeline | 市场/手动导入 → `skill-staging/` 隔离区 → 本地审计(`audit-reports/`) → 用户批准后写入 `{APP_DATA}/skills/` | 阻断“下载即执行/安装”，把供应链风险前移到 staging 阶段 |
 | Skill Marketplace Abstraction | 前端以 `SkillMarketplaceProvider` 统一开源市场与企业 Hub；Rust IPC 负责搜索/详情/下载/stage/audit/update | 普通版与企业版共用 UI/状态机，只替换目录源与鉴权 |
+| Runtime Tenant Model | 编译期 `APP_MODE` 仅是 startup hint；真实身份来自运行时 active profile（`local` / `enterprise`） | 普通用户可连接多个企业并切换身份，避免 build-time fork |
+| Profile-root Data Isolation | `settings/runbooks/kernel-state/skills/skill-staging/audit-reports/workspace` 全部挂在 active profile 根目录下 | 企业隔离边界必须是完整数据根，不能只隔离技能目录 |
+| Profile Switch Reload Discipline | `App.vue` 在 profile 切换后先 `refreshPaths()`，再重载 `settings/workspace/skills/runbooks`；`settingsStore.init()` 先回到默认快照，`workspaceStore` 在 reload 前清空内存状态并取消 debounce save timer | data path 是按 active profile 动态解析的；若不先清基线并取消延迟写入，旧 profile 状态会串写到新 profile |
+| Managed Enterprise Policy | 企业 profile 可持久化 `managedSettings`（锁定 providers/model/workspace、固定 Hub catalog、审计等级）并在 Rust 侧回写到 profile settings + kernel config | 高审计企业需要“后端可执行”的固化策略，而不是纯前端禁用按钮 |
 | Skill Discovery Bridge | 启动时在 config.json 注入 `skills.paths = ["{kernel-state}/opencode/.agents/skills"]` | **XDG 隔离只影响 config/data，不影响技能发现**（OpenCode 硬编码 `os.homedir()/.agents/skills/`）。需要 `skills.paths` 桥接 |
 | Local Audit Gate | 审计包含 checksum/结构/权限/脚本模式检查；`critical/high` 默认阻断安装 | 企业 Hub 只做目录与鉴权，安全责任不外包给远端服务 |
 | Release Target Scope | GitHub Actions CI/Release 仅保留 `macos-14`(arm64) / `macos-latest`(x64 target) / `windows-latest`(x64)，移除 Linux runner 与 Linux bundles | 降低发布矩阵复杂度，消除 Linux 打包链路引入的不稳定性 |
 | Branch Model | `main`(生产) / `develop`(集成) / `feat|fix/*`(工作分支)。发布走 develop → main PR → tag → Release CI | 线性历史优先，禁止直推 main/develop |
-| Git Hooks Gateway | `.githooks/` 三个 hook：pre-commit(基于 staged 扫描密钥 + 条件 `cargo check`/`vue-tsc`，可用 `SKIP_SECRET_SCAN=1`/`SKIP_RUST_CHECK=1`/`SKIP_TS_CHECK=1`) / commit-msg(Conventional Commits) / pre-push(禁止 main/develop non-fast-forward；禁止重写 tag，除非 `ALLOW_TAG_REWRITE=1`；tag `vX.Y.Z` 做 SemVer gate + 校验 tag 目标 commit 的版本文件对齐)；`package.json prepare` 自动激活 `core.hooksPath .githooks` | 零外部依赖（纯 bash），`pnpm install` 即自动生效 |
+| Git Hooks Gateway | `.githooks/` 由三个入口 hook + `.githooks/lib/*.sh` 共享库组成：pre-commit 基于 staged 内容做 secret scan 和条件 `cargo check`/`vue-tsc`，对“检测器定义文件/CI secrets 变量名”采用显式 path+pattern allowlist；commit-msg 做 Conventional Commits 校验；pre-push 只依据 ref/OID 拓扑判断 protected branch non-fast-forward 与 tag rewrite，并对 `vX.Y.Z` 做 SemVer gate + 版本文件对齐；`package.json prepare` 自动激活 `core.hooksPath .githooks`，`scripts/hooks-smoke.sh` 负责只读 smoke | 零外部依赖（纯 bash），规则可测试，避免把 `--no-verify` 变成常态流程 |
 | Release Convention | `v{major}.{minor}.{patch}` annotated tag 触发 `release.yml` → `tauri-action` → GitHub Draft Release。发版前版本同步由 `scripts/sync-version-from-tag.sh` 统一处理（本地与 CI 同源） | Tag-driven release，发版与代码改动解耦 |
 | Skill Activation IPC | `activate_skill(id, scope, ws_path)` / `deactivate_skill` / `get_skill_activations` — Rust 管理 symlink 创建/删除 | 安装 ≠ 激活；删除自动清理两个范围的 symlink |
 | Skill Recursive Discovery | `discover_skills_recursive` 递归扫描含 SKILL.md 的目录，ID 为相对路径（如 `monorepo/sub-skill`） | 支持 monorepo 布局 |
@@ -59,6 +74,7 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 | Provider Config | OpenCode `config.json` 唯一配置源（API Key/Base URL），变更后重启内核生效 | 消除双轨漂移 |
 | Provider UI Shadow State | Settings UI 读取 `settings.json.providers` 的 `hasKey/baseUrl` 作为展示状态；未在启动时从 `config.json` 反向水合 | 读取体验快，但存在“配置真实值与 UI 投影”漂移风险 |
 | Provider Restart Trigger | 默认由 `App.vue` 监听 `settingsStore.providerStates` 快照差异并在 2s 防抖后 `kernel.restart()`；额外在 `SettingsProvider` 对 `hasKey=true→true` 的密钥轮换做定向重启补偿 | 既避免初始化阶段误重启，又覆盖“影子态不变但密钥值已轮换”的漏检场景 |
+| Welcome Overlay Layout | `WelcomeScreen` 采用受视口高度约束的卡片布局：品牌区固定、step body 独立滚动、底部操作区固定；provider 列表使用 auto-fit grid 压缩垂直占用 | provider 注册表是数据驱动且会继续增长，欢迎页必须在“小屏 + 多 provider”下保持完整可达 |
 | Data Path Security | `write_data_file` 校验 relative path + canonical parent + `O_NOFOLLOW`，进程级写锁 | 阻断 TOCTOU + symlink 逃逸 |
 | Provider Env Guard | env key 仅允许 `OPENAI_`/`ANTHROPIC_` 前缀，禁止系统敏感变量 | 收敛注入面 |
 | Permission Reply | `permission.reply(requestID)` 回传 `once/always/reject`（默认拒绝） | 避免权限悬挂 |

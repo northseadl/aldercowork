@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod kernel;
+mod profile;
 mod skill;
 
 use kernel::KernelManager;
@@ -50,41 +51,13 @@ pub struct DataPaths {
     pub skill_audit_reports: String,
     pub kernel_state: String,
     pub workspace: String,
+    pub profile_id: String,
+    pub profile_kind: String,
+    pub profile_label: String,
 }
 
 pub fn resolve_data_paths(app: &tauri::AppHandle) -> DataPaths {
-    // Tauri provides platform-native paths via its path resolver:
-    //   macOS:   ~/Library/Application Support/com.aldercowork.desktop
-    //   Windows: %APPDATA%/com.aldercowork.desktop
-    let app_data = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from(".aldercowork"));
-
-    let app_cache = app
-        .path()
-        .app_cache_dir()
-        .unwrap_or_else(|_| app_data.join("cache"));
-
-    let app_log = app
-        .path()
-        .app_log_dir()
-        .unwrap_or_else(|_| app_data.join("logs"));
-
-    let to_string = |p: PathBuf| -> String { p.to_string_lossy().into_owned() };
-
-    DataPaths {
-        data: to_string(app_data.clone()),
-        config: to_string(app_data.clone()),
-        cache: to_string(app_cache),
-        logs: to_string(app_log),
-        kernels: to_string(app_data.join("kernels")),
-        skills: to_string(app_data.join("skills")),
-        skill_staging: to_string(app_data.join("skill-staging")),
-        skill_audit_reports: to_string(app_data.join("audit-reports")),
-        kernel_state: to_string(app_data.join("kernel-state")),
-        workspace: to_string(app_data.join("workspace")),
-    }
+    profile::resolve_active_data_paths(app)
 }
 
 fn canonical_config_root(config_dir: &str) -> Result<PathBuf, String> {
@@ -224,7 +197,7 @@ fn open_secure_temp_file_for_write(dest_path: &Path) -> Result<(PathBuf, std::fs
     Err("Failed to allocate temp file for write".into())
 }
 
-fn atomic_write_secure(path: &Path, content: &[u8]) -> Result<(), String> {
+pub(crate) fn atomic_write_secure(path: &Path, content: &[u8]) -> Result<(), String> {
     let (tmp_path, mut file) = open_secure_temp_file_for_write(path)?;
 
     file.write_all(content)
@@ -259,11 +232,143 @@ async fn stop_kernel_runtime(state: &Arc<Mutex<KernelManager>>) {
     }
 }
 
+fn ensure_active_profile_environment(app: &tauri::AppHandle) -> Result<DataPaths, String> {
+    let active_profile = profile::get_active_profile(app)?;
+    let data_paths = profile::resolve_profile_data_paths(app, &active_profile);
+
+    let dirs_to_create = [
+        &data_paths.data,
+        &data_paths.config,
+        &data_paths.cache,
+        &data_paths.logs,
+        &data_paths.kernels,
+        &data_paths.skills,
+        &data_paths.skill_staging,
+        &data_paths.skill_audit_reports,
+        &data_paths.kernel_state,
+        &data_paths.workspace,
+    ];
+    for dir in dirs_to_create {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("Failed to create profile dir {dir}: {e}"))?;
+    }
+
+    let opencode_dir = PathBuf::from(&data_paths.kernel_state).join("opencode");
+    std::fs::create_dir_all(&opencode_dir)
+        .map_err(|e| format!("Failed to create opencode config dir: {e}"))?;
+
+    let prompts_dir = opencode_dir.join("prompts");
+    std::fs::create_dir_all(&prompts_dir)
+        .map_err(|e| format!("Failed to create prompts dir: {e}"))?;
+    let prompt_src = app.path().resolve(
+        "resources/prompts/aldercowork.txt",
+        tauri::path::BaseDirectory::Resource,
+    );
+    match prompt_src {
+        Ok(src) if src.exists() => {
+            let dest = prompts_dir.join("aldercowork.txt");
+            std::fs::copy(&src, &dest)
+                .map_err(|e| format!("Failed to deploy prompt file: {e}"))?;
+        }
+        _ => {
+            let dest = prompts_dir.join("aldercowork.txt");
+            if !dest.exists() {
+                let fallback = include_str!("../resources/prompts/aldercowork.txt");
+                std::fs::write(&dest, fallback)
+                    .map_err(|e| format!("Failed to write fallback prompt: {e}"))?;
+            }
+        }
+    }
+
+    let config_path = opencode_dir.join("config.json");
+    let mut config: serde_json::Value = if config_path.exists() {
+        let raw = std::fs::read_to_string(&config_path).unwrap_or_default();
+        serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if !config.is_object() {
+        config = serde_json::json!({});
+    }
+
+    let obj = config
+        .as_object_mut()
+        .ok_or_else(|| "Kernel config should be an object".to_string())?;
+    obj.entry("$schema")
+        .or_insert(serde_json::json!("https://opencode.ai/config.json"));
+
+    {
+        let agent = obj
+            .entry("agent")
+            .or_insert(serde_json::json!({}))
+            .as_object_mut();
+        if let Some(agent_obj) = agent {
+            let build = agent_obj
+                .entry("build")
+                .or_insert(serde_json::json!({}))
+                .as_object_mut();
+            if let Some(build_obj) = build {
+                build_obj.insert(
+                    "description".to_string(),
+                    serde_json::json!("AlderCowork — versatile AI assistant for research, writing, analysis, and general tasks"),
+                );
+                build_obj.insert(
+                    "prompt".to_string(),
+                    serde_json::json!("{file:./prompts/aldercowork.txt}"),
+                );
+            }
+        }
+    }
+
+    obj.remove("_aldercowork_skills");
+
+    {
+        let skills_dir = opencode_dir
+            .join(".agents")
+            .join("skills")
+            .to_string_lossy()
+            .into_owned();
+        let skills = obj
+            .entry("skills")
+            .or_insert(serde_json::json!({}))
+            .as_object_mut();
+        if let Some(skills_obj) = skills {
+            skills_obj.insert("paths".to_string(), serde_json::json!([skills_dir]));
+        }
+    }
+
+    profile::apply_managed_settings_to_kernel_config(app, &mut config)?;
+
+    if let Ok(json_str) = serde_json::to_string_pretty(&config) {
+        atomic_write_secure(&config_path, json_str.as_bytes())
+            .map_err(|e| format!("Failed to write config.json: {e}"))?;
+    }
+
+    let kernel_agents_dir = opencode_dir.join(".agents");
+    let kernel_skills_dir = kernel_agents_dir.join("skills");
+    if kernel_skills_dir.is_symlink() {
+        let _ = std::fs::remove_file(&kernel_skills_dir);
+    }
+    std::fs::create_dir_all(&kernel_skills_dir)
+        .map_err(|e| format!("Failed to create kernel skills dir: {e}"))?;
+
+    profile::sync_profile_settings_file(app, &active_profile)?;
+
+    Ok(data_paths)
+}
+
 async fn start_kernel_runtime(
     app: &tauri::AppHandle,
     state: &Arc<Mutex<KernelManager>>,
     extra_env: Option<Vec<(String, String)>>,
 ) -> Result<kernel::KernelInfo, String> {
+    let data_paths = ensure_active_profile_environment(app)?;
+    {
+        let mut mgr = state.lock().await;
+        mgr.set_kernel_state_dir(data_paths.kernel_state.clone());
+    }
+
     let info = {
         let mut mgr = state.lock().await;
         mgr.spawn_process(app, extra_env, state.clone())?
@@ -374,6 +479,96 @@ async fn kernel_status(
 }
 
 #[tauri::command]
+async fn get_profile_registry(
+    app: tauri::AppHandle,
+) -> Result<profile::ProfileRegistrySnapshot, String> {
+    profile::get_profile_registry_snapshot(&app)
+}
+
+#[tauri::command]
+async fn get_active_profile(app: tauri::AppHandle) -> Result<profile::AppProfile, String> {
+    profile::get_active_profile(&app)
+}
+
+#[tauri::command]
+async fn connect_enterprise_profile(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<Mutex<KernelManager>>>,
+    request: profile::ConnectEnterpriseProfileRequest,
+) -> Result<profile::ProfileMutationResult, String> {
+    let previous_active = profile::get_active_profile(&app).ok().map(|item| item.id);
+    let result = profile::connect_enterprise_profile(&app, request)?;
+    let should_restart = previous_active.as_deref() == Some(result.target_profile_id.as_str())
+        || result.active_profile_id == result.target_profile_id;
+
+    if should_restart {
+        let kernel_state = state.inner().clone();
+        stop_kernel_runtime(&kernel_state).await;
+        match start_kernel_runtime(&app, &kernel_state, None).await {
+            Ok(info) => {
+                let _ = app.emit("kernel-started", &info);
+            }
+            Err(error) => {
+                let _ = app.emit("kernel-error", error.clone());
+                return Err(error);
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn switch_active_profile(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<Mutex<KernelManager>>>,
+    profile_id: String,
+) -> Result<profile::ProfileMutationResult, String> {
+    let result = profile::switch_active_profile(&app, &profile_id)?;
+    let kernel_state = state.inner().clone();
+    stop_kernel_runtime(&kernel_state).await;
+    match start_kernel_runtime(&app, &kernel_state, None).await {
+        Ok(info) => {
+            let _ = app.emit("kernel-started", &info);
+        }
+        Err(error) => {
+            let _ = app.emit("kernel-error", error.clone());
+            return Err(error);
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+async fn remove_profile(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<Mutex<KernelManager>>>,
+    profile_id: String,
+    purge_data: Option<bool>,
+) -> Result<profile::ProfileMutationResult, String> {
+    let previous_active = profile::get_active_profile(&app).ok().map(|item| item.id);
+    let result = profile::remove_profile(&app, &profile_id, purge_data.unwrap_or(true))?;
+    let should_restart = previous_active.as_deref() == Some(profile_id.as_str())
+        || previous_active.as_deref() != Some(result.active_profile_id.as_str());
+
+    if should_restart {
+        let kernel_state = state.inner().clone();
+        stop_kernel_runtime(&kernel_state).await;
+        match start_kernel_runtime(&app, &kernel_state, None).await {
+            Ok(info) => {
+                let _ = app.emit("kernel-started", &info);
+            }
+            Err(error) => {
+                let _ = app.emit("kernel-error", error.clone());
+                return Err(error);
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
 async fn get_data_paths(app: tauri::AppHandle) -> Result<DataPaths, String> {
     Ok(resolve_data_paths(&app))
 }
@@ -385,7 +580,11 @@ async fn get_default_workspace(app: tauri::AppHandle) -> Result<String, String> 
 }
 
 #[tauri::command]
-async fn select_workspace() -> Result<Option<String>, String> {
+async fn select_workspace(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    if profile::is_active_profile_workspace_locked(&app) {
+        return Err("Workspace selection is disabled by enterprise policy".into());
+    }
+
     let result = tokio::task::spawn_blocking(|| {
         rfd::FileDialog::new()
             .set_title("Open Project")
@@ -466,10 +665,13 @@ async fn write_kernel_config(app: tauri::AppHandle, content: String) -> Result<(
 
     let config_path = opencode_config_dir.join("config.json");
 
-    serde_json::from_str::<serde_json::Value>(&content)
-        .map_err(|e| format!("Invalid JSON: {e}"))?;
+    let mut config =
+        serde_json::from_str::<serde_json::Value>(&content).map_err(|e| format!("Invalid JSON: {e}"))?;
+    profile::apply_managed_settings_to_kernel_config(&app, &mut config)?;
+    let json = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize kernel config: {e}"))?;
 
-    atomic_write_secure(&config_path, content.as_bytes())
+    atomic_write_secure(&config_path, json.as_bytes())
         .map_err(|e| format!("Failed to write kernel config: {e}"))?;
 
     eprintln!("[main] wrote kernel config to {}", config_path.display());
@@ -505,154 +707,19 @@ fn main() {
         .plugin(tauri_plugin_process::init())
         .manage(kernel_manager.clone())
         .setup(move |app| {
-            let data_paths = resolve_data_paths(app.handle());
-
-            let dirs_to_create = [
-                &data_paths.data,
-                &data_paths.config,
-                &data_paths.cache,
-                &data_paths.logs,
-                &data_paths.kernels,
-                &data_paths.skills,
-                &data_paths.skill_staging,
-                &data_paths.skill_audit_reports,
-                &data_paths.kernel_state,
-                &data_paths.workspace,
-            ];
-            for dir in dirs_to_create {
-                if let Err(e) = std::fs::create_dir_all(dir) {
-                    eprintln!("[main] failed to create dir {dir}: {e}");
-                }
-            }
-
-            let opencode_dir = PathBuf::from(&data_paths.kernel_state).join("opencode");
-            if let Err(e) = std::fs::create_dir_all(&opencode_dir) {
-                eprintln!("[main] failed to create opencode config dir: {e}");
-            }
-
-            // Deploy system prompt to {kernel_state}/opencode/prompts/aldercowork.txt
-            let prompts_dir = opencode_dir.join("prompts");
-            if let Err(e) = std::fs::create_dir_all(&prompts_dir) {
-                eprintln!("[main] failed to create prompts dir: {e}");
-            }
-            let prompt_src = app.path().resolve(
-                "resources/prompts/aldercowork.txt",
-                tauri::path::BaseDirectory::Resource,
-            );
-            match prompt_src {
-                Ok(src) if src.exists() => {
-                    let dest = prompts_dir.join("aldercowork.txt");
-                    if let Err(e) = std::fs::copy(&src, &dest) {
-                        eprintln!("[main] failed to deploy prompt file: {e}");
-                    } else {
-                        eprintln!("[main] deployed aldercowork prompt to {}", dest.display());
-                    }
-                }
-                _ => {
-                    let dest = prompts_dir.join("aldercowork.txt");
-                    if !dest.exists() {
-                        let fallback = include_str!("../resources/prompts/aldercowork.txt");
-                        if let Err(e) = std::fs::write(&dest, fallback) {
-                            eprintln!("[main] failed to write fallback prompt: {e}");
-                        }
-                    }
-                }
-            }
-
-            // Merge AlderCowork agent identity into config.json
-            let config_path = opencode_dir.join("config.json");
-            {
-                let mut config: serde_json::Value = if config_path.exists() {
-                    let raw = std::fs::read_to_string(&config_path).unwrap_or_default();
-                    serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
-                } else {
-                    serde_json::json!({})
-                };
-
-                if !config.is_object() {
-                    config = serde_json::json!({});
-                }
-
-                let obj = config
-                    .as_object_mut()
-                    .expect("config should be object after normalization");
-                obj.entry("$schema")
-                    .or_insert(serde_json::json!("https://opencode.ai/config.json"));
-
-                {
-                    let agent = obj
-                        .entry("agent")
-                        .or_insert(serde_json::json!({}))
-                        .as_object_mut();
-                    if let Some(agent_obj) = agent {
-                        let build = agent_obj
-                            .entry("build")
-                            .or_insert(serde_json::json!({}))
-                            .as_object_mut();
-                        if let Some(build_obj) = build {
-                            build_obj.insert(
-                                "description".to_string(),
-                                serde_json::json!("AlderCowork — versatile AI assistant for research, writing, analysis, and general tasks"),
-                            );
-                            build_obj.insert(
-                                "prompt".to_string(),
-                                serde_json::json!("{file:./prompts/aldercowork.txt}"),
-                            );
-                        }
-                    }
-                }
-
-                obj.remove("_aldercowork_skills");
-
-                // Inject skills.paths for OpenCode skill discovery via XDG-isolated directory
-                {
-                    let skills_dir = opencode_dir
-                        .join(".agents")
-                        .join("skills")
-                        .to_string_lossy()
-                        .into_owned();
-                    let skills = obj
-                        .entry("skills")
-                        .or_insert(serde_json::json!({}))
-                        .as_object_mut();
-                    if let Some(skills_obj) = skills {
-                        skills_obj.insert(
-                            "paths".to_string(),
-                            serde_json::json!([skills_dir]),
-                        );
-                    }
-                }
-
-                if let Ok(json_str) = serde_json::to_string_pretty(&config) {
-                    if let Err(e) = atomic_write_secure(&config_path, json_str.as_bytes()) {
-                        eprintln!("[main] failed to write config.json: {e}");
-                    }
-                }
-            }
-
-            // Ensure activation symlink directory exists
-            let kernel_agents_dir = opencode_dir.join(".agents");
-            let kernel_skills_dir = kernel_agents_dir.join("skills");
-            if kernel_skills_dir.is_symlink() {
-                let _ = std::fs::remove_file(&kernel_skills_dir);
-            }
-            if let Err(e) = std::fs::create_dir_all(&kernel_skills_dir) {
-                eprintln!("[main] failed to create kernel skills dir: {e}");
-            }
+            let data_paths = ensure_active_profile_environment(app.handle())
+                .unwrap_or_else(|error| {
+                    eprintln!("[main] failed to prepare active profile environment: {error}");
+                    resolve_data_paths(app.handle())
+                });
 
             eprintln!("[main] data paths: {:?}", data_paths);
 
             let handle = app.handle().clone();
             let mgr = kernel_manager.clone();
-            let kernel_state_dir = data_paths.kernel_state.clone();
 
             tauri::async_runtime::spawn(async move {
                 eprintln!("[main] auto-starting engine...");
-                {
-                    let mut manager = mgr.lock().await;
-                    manager.set_kernel_state_dir(kernel_state_dir);
-                }
-
                 match start_kernel_runtime(&handle, &mgr, None).await {
                     Ok(info) => {
                         eprintln!("[main] engine started on port {}", info.port);
@@ -673,6 +740,11 @@ fn main() {
             restart_kernel_with_env,
             set_provider_env,
             kernel_status,
+            get_profile_registry,
+            get_active_profile,
+            connect_enterprise_profile,
+            switch_active_profile,
+            remove_profile,
             get_data_paths,
             get_default_workspace,
             select_workspace,

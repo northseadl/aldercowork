@@ -24,12 +24,54 @@ REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 HOOK_PRE_PUSH="${REPO_ROOT}/.githooks/pre-push"
 HOOK_PRE_COMMIT="${REPO_ROOT}/.githooks/pre-commit"
 HOOK_COMMIT_MSG="${REPO_ROOT}/.githooks/commit-msg"
+HOOK_COMMON_LIB="${REPO_ROOT}/.githooks/lib/common.sh"
+HOOK_PRE_COMMIT_LIB="${REPO_ROOT}/.githooks/lib/pre-commit.sh"
+HOOK_PRE_PUSH_LIB="${REPO_ROOT}/.githooks/lib/pre-push.sh"
 
 info "bash -n …"
-bash -n "$HOOK_PRE_PUSH" "$HOOK_PRE_COMMIT" "$HOOK_COMMIT_MSG"
+bash -n "$HOOK_PRE_PUSH" "$HOOK_PRE_COMMIT" "$HOOK_COMMIT_MSG" "$HOOK_COMMON_LIB" "$HOOK_PRE_COMMIT_LIB" "$HOOK_PRE_PUSH_LIB"
 bash -n "${REPO_ROOT}/scripts/check-version-bump.sh"
 bash -n "${REPO_ROOT}/scripts/sync-version-from-tag.sh"
 info "bash -n ✓"
+
+info "shared lib guardrails…"
+HOOK_NAME="hooks-smoke"
+# shellcheck source=.githooks/lib/common.sh
+. "$HOOK_COMMON_LIB"
+# shellcheck source=.githooks/lib/pre-commit.sh
+. "$HOOK_PRE_COMMIT_LIB"
+
+if ! should_skip_secret_pattern_for_file 'PRIVATE[_ ]KEY' '.github/workflows/release.yml'; then
+  fail "expected PRIVATE[_ ]KEY allowlist for release workflow"
+fi
+if should_skip_secret_pattern_for_file 'BEGIN RSA PRIVATE KEY' '.github/workflows/release.yml'; then
+  fail "release workflow must not skip BEGIN RSA PRIVATE KEY"
+fi
+if ! should_skip_secret_pattern_for_file 'BEGIN RSA PRIVATE KEY' '.githooks/pre-commit'; then
+  fail "expected BEGIN RSA PRIVATE KEY allowlist for hook detector definitions"
+fi
+if ! should_skip_secret_pattern_for_file 'BEGIN OPENSSH PRIVATE KEY' '.githooks/lib/pre-commit.sh'; then
+  fail "expected BEGIN OPENSSH PRIVATE KEY allowlist for pre-commit library"
+fi
+if ! should_skip_secret_pattern_for_file 'PRIVATE[_ ]KEY' 'scripts/hooks-smoke.sh'; then
+  fail "expected PRIVATE[_ ]KEY allowlist for hook smoke tests"
+fi
+info "shared lib guardrails ✓"
+
+tmp_commit_msg=$(mktemp)
+trap 'rm -f "$tmp_commit_msg"' EXIT
+
+info "commit-msg valid sample…"
+printf 'chore: 测试 hook 校验\n' > "$tmp_commit_msg"
+"$HOOK_COMMIT_MSG" "$tmp_commit_msg" >/dev/null
+info "commit-msg valid ✓"
+
+info "commit-msg invalid sample…"
+printf 'bad message\n' > "$tmp_commit_msg"
+if "$HOOK_COMMIT_MSG" "$tmp_commit_msg" >/dev/null 2>&1; then
+  fail "expected invalid commit message to fail, but it passed"
+fi
+info "commit-msg invalid blocked ✓"
 
 info "pre-commit runtime (bypassed)…"
 ALLOW_DIRECT_COMMIT=1 SKIP_SECRET_SCAN=1 SKIP_RUST_CHECK=1 SKIP_TS_CHECK=1 "$HOOK_PRE_COMMIT" >/dev/null

@@ -25,6 +25,12 @@ export interface DataPaths {
     skillAuditReports: string
     /** OpenCode kernel state (isolated from ~/.config/opencode) */
     kernelState: string
+    /** Default workspace root for the active profile */
+    workspace: string
+    /** Active profile identity */
+    profileId: string
+    profileKind: 'local' | 'enterprise'
+    profileLabel: string
 }
 
 const BROWSER_FALLBACK: DataPaths = {
@@ -37,6 +43,10 @@ const BROWSER_FALLBACK: DataPaths = {
     skillStaging: '~/.aldercowork/skill-staging',
     skillAuditReports: '~/.aldercowork/audit-reports',
     kernelState: '~/.aldercowork/kernel-state',
+    workspace: '~/.aldercowork/workspace',
+    profileId: 'local:default',
+    profileKind: 'local',
+    profileLabel: 'Local',
 }
 
 let cachedPaths: DataPaths | null = null
@@ -55,8 +65,8 @@ async function getTauriInvoke() {
     return invoke
 }
 
-async function fetchPaths(): Promise<DataPaths> {
-    if (cachedPaths) return cachedPaths
+async function fetchPaths(force = false): Promise<DataPaths> {
+    if (!force && cachedPaths) return cachedPaths
 
     if (!isTauriRuntime()) {
         cachedPaths = BROWSER_FALLBACK
@@ -77,6 +87,12 @@ async function fetchPaths(): Promise<DataPaths> {
             `Failed to resolve platform data paths: ${error instanceof Error ? error.message : String(error)}`,
         )
     }
+}
+
+async function refreshPaths(): Promise<DataPaths> {
+    cachedPaths = null
+    ready.value = false
+    return fetchPaths(true)
 }
 
 /**
@@ -116,6 +132,8 @@ export function useDataPaths() {
         ready: readonly(ready),
         /** Explicitly fetch/resolve paths (call once at app init) */
         fetchPaths,
+        /** Invalidate cached paths and refetch for the active profile */
+        refreshPaths,
         /** Read a file from the data directory */
         readDataFile,
         /** Write a file to the data directory */

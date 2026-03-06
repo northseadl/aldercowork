@@ -27,11 +27,14 @@ export const useRunbookStore = defineStore('runbook', () => {
     // --- Persistence via existing IPC (zero Rust changes) ---
 
     async function loadRunbooks(): Promise<void> {
+        loaded.value = false
         try {
             const raw = await invoke<string>('read_data_file', { relativePath: STORAGE_KEY })
             if (raw) {
                 const parsed = JSON.parse(raw) as Runbook[]
                 runbooks.value = Array.isArray(parsed) ? parsed : []
+            } else {
+                runbooks.value = []
             }
         } catch (e) {
             console.warn('[runbookStore] loadRunbooks failed:', e)
@@ -39,6 +42,12 @@ export const useRunbookStore = defineStore('runbook', () => {
         } finally {
             loaded.value = true
         }
+    }
+
+    async function reload(): Promise<void> {
+        runbooks.value = []
+        selectedId.value = ''
+        await loadRunbooks()
     }
 
     async function persist(): Promise<void> {
@@ -99,6 +108,7 @@ export const useRunbookStore = defineStore('runbook', () => {
         loaded,
         saving,
         loadRunbooks,
+        reload,
         createRunbook,
         updateRunbook,
         deleteRunbook,

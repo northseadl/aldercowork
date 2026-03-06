@@ -10,11 +10,15 @@ import { AppContent, AppHeader, AppShell, AppSidebar } from './components/layout
 import { AppToast, CommandPalette, ConfirmDialog, PermissionDialog } from './components/ui'
 import { useI18n } from './i18n'
 import { createKernel, KERNEL_KEY } from './composables/useKernel'
-import { useKeyboard, useToast, installCopyDelegate } from './composables'
+import { useDataPaths, useKeyboard, useToast, installCopyDelegate } from './composables'
 import { useAppStore } from './stores/app'
 import { useInstalledSkillStore } from './stores/installedSkill'
+import { useMarketplaceSkillStore } from './stores/marketplaceSkill'
+import { PROFILE_CONTEXT_CHANGED_EVENT, useProfileStore } from './stores/profile'
+import { useRunbookStore } from './stores/runbook'
 import { useSessionStore } from './stores/session'
 import { useSettingsStore } from './stores/settings'
+import { useSkillAuditStore } from './stores/skillAudit'
 import { useWorkspaceStore } from './stores/workspace'
 
 import type { AppNavId, BreadcrumbItem, RuntimeErrorDetail, SidebarNavItem } from './types'
@@ -39,9 +43,14 @@ const route = useRoute()
 
 const appStore = useAppStore()
 const sessionStore = useSessionStore()
+const profileStore = useProfileStore()
 const settingsStore = useSettingsStore()
 const installedSkillStore = useInstalledSkillStore()
+const marketplaceSkillStore = useMarketplaceSkillStore()
+const skillAuditStore = useSkillAuditStore()
+const runbookStore = useRunbookStore()
 const workspaceStore = useWorkspaceStore()
+const { refreshPaths } = useDataPaths()
 const toast = useToast()
 const fatalRuntimeError = ref<RuntimeErrorDetail | null>(null)
 const recoverNonce = ref(0)
@@ -51,6 +60,22 @@ const { activeNav } = storeToRefs(appStore)
 const { activeSession, activeSessionId } = storeToRefs(sessionStore)
 const { skillCount } = storeToRefs(installedSkillStore)
 const { configured, loaded: settingsLoaded } = storeToRefs(settingsStore)
+
+async function reloadProfileBoundState() {
+  await refreshPaths()
+  await settingsStore.reload()
+  providerStatesSnapshot = JSON.stringify(settingsStore.providerStates)
+  sessionStore.resetForProfile()
+  marketplaceSkillStore.resetForProfile()
+  skillAuditStore.resetForProfile()
+  await workspaceStore.reloadForProfile()
+  await installedSkillStore.loadAll()
+  await runbookStore.reload()
+}
+
+const handleProfileContextChanged = () => {
+  void reloadProfileBoundState()
+}
 
 // Map session store → sidebar display format
 const sidebarSessions = computed(() =>
@@ -115,8 +140,10 @@ const recoverToSessions = () => {
 
 onMounted(async () => {
   window.addEventListener(RUNTIME_ERROR_EVENT, handleRuntimeErrorEvent as EventListener)
+  window.addEventListener(PROFILE_CONTEXT_CHANGED_EVENT, handleProfileContextChanged as EventListener)
   uninstallCopyDelegate = installCopyDelegate()
-  await workspaceStore.loadFromSettings()
+  await profileStore.init()
+  await reloadProfileBoundState()
 })
 
 // Sync settings config to kernel on initial load.
@@ -182,6 +209,7 @@ watch(
 
 onUnmounted(() => {
   window.removeEventListener(RUNTIME_ERROR_EVENT, handleRuntimeErrorEvent as EventListener)
+  window.removeEventListener(PROFILE_CONTEXT_CHANGED_EVENT, handleProfileContextChanged as EventListener)
   uninstallCopyDelegate?.()
   uninstallCopyDelegate = null
   if (providerChangeDebounce) clearTimeout(providerChangeDebounce)

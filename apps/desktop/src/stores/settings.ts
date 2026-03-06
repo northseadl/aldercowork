@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { APP_MODE, type AppMode } from '../config/build'
 import { useDataPaths } from '../composables/useDataPaths'
+import { useProfileStore } from './profile'
 
 const SETTINGS_FILE = 'settings.json'
 const LEGACY_STORAGE_KEY = 'aldercowork:settings'
@@ -206,6 +207,7 @@ function migrateFromLocalStorage(): PersistedSettings | null {
 
 export const useSettingsStore = defineStore('settings', () => {
     const { readDataFile, writeDataFile } = useDataPaths()
+    const profileStore = useProfileStore()
 
     const mode = ref<AppMode>(APP_MODE)
     const configured = ref(false)
@@ -218,7 +220,38 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // --- Init: load from file, with localStorage migration ---
 
+    function applyManagedProfileOverlay() {
+        const managed = profileStore.managedSettings
+        if (!managed) return
+
+        if (managed.defaultProvider) {
+            defaultProvider.value = managed.defaultProvider
+        }
+
+        if (Object.keys(managed.providerOverrides).length > 0) {
+            const nextStates = { ...providerStates.value }
+            for (const [providerId, overrideState] of Object.entries(managed.providerOverrides)) {
+                const current = nextStates[providerId] ?? {
+                    enabled: false,
+                    hasKey: false,
+                    baseUrl: '',
+                    source: 'local' as const,
+                }
+                nextStates[providerId] = {
+                    enabled: overrideState.enabled ?? current.enabled,
+                    hasKey: overrideState.hasKey ?? current.hasKey,
+                    baseUrl: overrideState.baseUrl ?? current.baseUrl,
+                    source: overrideState.source ?? 'hub',
+                }
+            }
+            providerStates.value = nextStates
+        }
+    }
+
     async function init() {
+        loaded.value = false
+        applySettings({ ...DEFAULTS })
+
         // Try file-based settings first
         const fileContent = await readDataFile(SETTINGS_FILE)
 
@@ -234,11 +267,18 @@ export const useSettingsStore = defineStore('settings', () => {
             }
         }
 
+        applyManagedProfileOverlay()
         loaded.value = true
     }
 
+    async function reload() {
+        await init()
+    }
+
     function applySettings(settings: PersistedSettings) {
-        mode.value = settings.mode
+        mode.value = profileStore.activeProfile?.kind === 'enterprise' || settings.mode === 'enterprise'
+            ? 'enterprise'
+            : 'standalone'
         configured.value = settings.configured
         defaultProvider.value = settings.defaultProvider
 
@@ -249,7 +289,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     function currentSnapshot(): PersistedSettings {
         return {
-            mode: mode.value,
+            mode: profileStore.activeProfile?.kind === 'enterprise' ? 'enterprise' : 'standalone',
             configured: configured.value,
             defaultProvider: defaultProvider.value,
 
@@ -307,10 +347,14 @@ export const useSettingsStore = defineStore('settings', () => {
     const defaultProviderDef = computed(() =>
         getProviderDef(defaultProvider.value) ?? BUILTIN_PROVIDERS[0],
     )
+    const providersLocked = computed(() => profileStore.isSectionLocked('providers'))
+    const workspaceLocked = computed(() => profileStore.isSectionLocked('workspace'))
+    const modelLocked = computed(() => profileStore.isSectionLocked('model'))
 
     // --- Mutations ---
 
     function updateProviderState(id: string, patch: Partial<Omit<ProviderState, 'id'>>) {
+        if (providersLocked.value) return
         const current = providerStates.value[id] ?? {
             enabled: false,
             hasKey: false,
@@ -324,14 +368,17 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     function markProviderKey(id: string, hasKey: boolean) {
+        if (providersLocked.value) return
         updateProviderState(id, { hasKey, enabled: hasKey })
     }
 
     function setProviderBaseUrl(id: string, baseUrl: string) {
+        if (providersLocked.value) return
         updateProviderState(id, { baseUrl })
     }
 
     function setDefaultProvider(id: string) {
+        if (providersLocked.value) return
         defaultProvider.value = id
     }
 
@@ -340,6 +387,7 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     function setWorkspaceState(workspaces: WorkspacePersisted[], activeId: string | null) {
+        if (workspaceLocked.value) return
         recentWorkspaces.value = workspaces
         activeWorkspaceId.value = activeId
     }
@@ -375,9 +423,13 @@ export const useSettingsStore = defineStore('settings', () => {
         cnProviders,
         activeProviders,
         defaultProviderDef,
+        providersLocked,
+        workspaceLocked,
+        modelLocked,
 
         // Actions
         init,
+        reload,
         getProviderDef,
         updateProviderState,
         markProviderKey,

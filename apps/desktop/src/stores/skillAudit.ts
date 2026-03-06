@@ -134,6 +134,13 @@ export const useSkillAuditStore = defineStore('skill-audit', () => {
     return report
   }
 
+  function resetForProfile() {
+    stagedSkill.value = null
+    activeReport.value = null
+    reportVisible.value = false
+    error.value = null
+  }
+
   return {
     stagedSkill,
     activeReport,
@@ -153,5 +160,6 @@ export const useSkillAuditStore = defineStore('skill-audit', () => {
     dismissStage,
     loadInstalledReport,
     loadStagedReport,
+    resetForProfile,
   }
 })

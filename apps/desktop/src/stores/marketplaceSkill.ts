@@ -68,6 +68,15 @@ export const useMarketplaceSkillStore = defineStore('marketplace-skill', () => {
     return currentProvider.update(skillId, workspacePath)
   }
 
+  function resetForProfile() {
+    provider.value = null
+    query.value = ''
+    items.value = []
+    details.value = {}
+    sourceLabel.value = ''
+    loadError.value = null
+  }
+
   return {
     provider,
     query,
@@ -83,5 +92,6 @@ export const useMarketplaceSkillStore = defineStore('marketplace-skill', () => {
     loadSkillDetail,
     downloadSkill,
     stageUpdate,
+    resetForProfile,
   }
 })

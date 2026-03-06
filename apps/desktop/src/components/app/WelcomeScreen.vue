@@ -101,41 +101,47 @@ function skipForNow() {
 
       <!-- Step 1: Choose Provider -->
       <div v-if="step === 'provider'" class="welcome__step">
-        <h2 class="welcome__section-title">{{ t('welcome.chooseProvider') }}</h2>
-        <p class="welcome__desc">{{ t('welcome.chooseProviderDesc') }}</p>
-
-        <div class="welcome__providers">
-          <button
-            v-for="p in FEATURED_PROVIDERS"
-            :key="p.id"
-            class="welcome__provider-btn"
-            @click="selectProvider(p.id)"
-          >
-            <span class="welcome__provider-name">{{ p.label }}</span>
-            <span class="welcome__provider-desc">{{ p.description }}</span>
-            <svg class="welcome__provider-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-          </button>
+        <div class="welcome__step-header">
+          <h2 class="welcome__section-title">{{ t('welcome.chooseProvider') }}</h2>
+          <p class="welcome__desc">{{ t('welcome.chooseProviderDesc') }}</p>
         </div>
 
-        <div class="welcome__more">
-          <div class="welcome__more-label">{{ t('welcome.moreProviders') }}</div>
-          <div class="welcome__more-grid">
+        <div class="welcome__step-body">
+          <div class="welcome__providers">
             <button
-              v-for="p in otherProviders"
+              v-for="p in FEATURED_PROVIDERS"
               :key="p.id"
-              class="welcome__more-btn"
+              class="welcome__provider-btn"
               @click="selectProvider(p.id)"
             >
-              {{ p.label }}
+              <span class="welcome__provider-name">{{ p.label }}</span>
+              <span class="welcome__provider-desc">{{ p.description }}</span>
+              <svg class="welcome__provider-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
             </button>
+          </div>
+
+          <div v-if="otherProviders.length" class="welcome__more">
+            <div class="welcome__more-label">{{ t('welcome.moreProviders') }}</div>
+            <div class="welcome__more-grid">
+              <button
+                v-for="p in otherProviders"
+                :key="p.id"
+                class="welcome__more-btn"
+                @click="selectProvider(p.id)"
+              >
+                {{ p.label }}
+              </button>
+            </div>
           </div>
         </div>
 
-        <button class="welcome__skip" @click="skipForNow">
-          {{ t('welcome.skipForNow') }}
-        </button>
+        <div class="welcome__step-actions">
+          <button class="welcome__skip" @click="skipForNow">
+            {{ t('welcome.skipForNow') }}
+          </button>
+        </div>
       </div>
 
       <!-- Step 2: Enter API Key -->
@@ -147,34 +153,52 @@ function skipForNow() {
           {{ t('welcome.back') }}
         </button>
 
-        <h2 class="welcome__section-title">{{ selectedDef.label }}</h2>
-        <p class="welcome__desc">{{ t('welcome.enterApiKey') }}</p>
+        <div class="welcome__step-header">
+          <h2 class="welcome__section-title">{{ selectedDef.label }}</h2>
+          <p class="welcome__desc">{{ t('welcome.enterApiKey') }}</p>
+        </div>
 
-        <form class="welcome__form" @submit.prevent="handleSaveKey">
-          <div class="welcome__field">
-            <label class="welcome__label" :for="`apikey-${selectedDef.id}`">{{ t('welcome.apiKeyLabel') }}</label>
-            <input
-              :id="`apikey-${selectedDef.id}`"
-              v-model="apiKeyInput"
-              type="password"
-              class="welcome__input"
-              :placeholder="`${selectedDef.envVar}=sk-...`"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <code class="welcome__env-hint">{{ selectedDef.envVar }}</code>
-          </div>
+        <div class="welcome__step-body">
+          <form class="welcome__form" @submit.prevent="handleSaveKey">
+            <div class="welcome__field">
+              <label class="welcome__label" :for="`apikey-${selectedDef.id}`">{{ t('welcome.apiKeyLabel') }}</label>
+              <input
+                :id="`apikey-${selectedDef.id}`"
+                v-model="apiKeyInput"
+                type="password"
+                class="welcome__input"
+                :placeholder="`${selectedDef.envVar}=sk-...`"
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <code class="welcome__env-hint">{{ selectedDef.envVar }}</code>
+            </div>
 
-          <div v-if="error" class="welcome__error">{{ error }}</div>
+            <div v-if="error" class="welcome__error">{{ error }}</div>
 
-          <button type="submit" class="welcome__submit" :disabled="saving">
-            {{ saving ? t('common.loading') : t('welcome.getStarted') }}
+            <button type="submit" class="welcome__submit" :disabled="saving">
+              {{ saving ? t('common.loading') : t('welcome.getStarted') }}
+            </button>
+          </form>
+        </div>
+
+        <div class="welcome__step-actions">
+          <button class="welcome__skip" @click="skipForNow">
+            {{ t('welcome.skipForNow') }}
           </button>
-        </form>
+        </div>
+      </div>
 
-        <button class="welcome__skip" @click="skipForNow">
-          {{ t('welcome.skipForNow') }}
-        </button>
+      <div v-else class="welcome__step">
+        <div class="welcome__step-header">
+          <h2 class="welcome__section-title">{{ t('welcome.chooseProvider') }}</h2>
+          <p class="welcome__desc">{{ t('welcome.chooseProviderDesc') }}</p>
+        </div>
+        <div class="welcome__step-actions">
+          <button class="welcome__skip" @click="skipForNow">
+            {{ t('welcome.skipForNow') }}
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -185,21 +209,28 @@ function skipForNow() {
   position: fixed;
   inset: 0;
   z-index: 200;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   background: var(--shell);
-  padding: calc(var(--sp) * 2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: clamp(16px, 4vw, 28px);
 }
 
 .welcome__card {
-  width: min(100%, 420px);
+  width: min(100%, 460px);
+  max-block-size: calc(100dvh - clamp(32px, 8vw, 56px));
+  margin-block: auto;
   border-radius: var(--r-xl);
   border: 1px solid var(--border);
   background: var(--content-warm);
   box-shadow: var(--shadow-card);
-  padding: calc(var(--sp) * 3);
+  padding: clamp(20px, 3vw, 24px);
   display: grid;
-  gap: calc(var(--sp) * 2.5);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: calc(var(--sp) * 2);
+  overflow: hidden;
 }
 
 .welcome__brand {
@@ -224,8 +255,30 @@ function skipForNow() {
 }
 
 .welcome__step {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--sp) * 1.5);
+  min-block-size: 0;
+}
+
+.welcome__step-header {
+  display: grid;
+  gap: calc(var(--sp) * 0.75);
+}
+
+.welcome__step-body {
   display: grid;
   gap: calc(var(--sp) * 1.5);
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline-end: 4px;
+  margin-inline-end: -4px;
+}
+
+.welcome__step-actions {
+  padding-top: calc(var(--sp) * 1.25);
+  border-top: 1px solid var(--border);
 }
 
 .welcome__section-title {
@@ -260,16 +313,18 @@ function skipForNow() {
 /* Provider selection buttons */
 .welcome__providers {
   display: grid;
-  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 8px;
 }
 
 .welcome__provider-btn {
   display: grid;
   grid-template-columns: 1fr auto;
   grid-template-rows: auto auto;
-  gap: 2px 12px;
+  gap: 4px 12px;
   align-items: center;
-  padding: 12px 14px;
+  min-block-size: 84px;
+  padding: 14px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--content);
@@ -281,17 +336,17 @@ function skipForNow() {
 .welcome__provider-btn:hover {
   border-color: var(--brand);
   background: color-mix(in srgb, var(--brand) 4%, var(--content));
-  transform: translateX(2px);
+  transform: translateY(-1px);
 }
 
 .welcome__provider-name {
-  font: var(--fw-semibold) var(--text-small) / 1.2 var(--font);
+  font: var(--fw-semibold) var(--text-small) / var(--lh-tight) var(--font);
   color: var(--text-1);
   grid-column: 1;
 }
 
 .welcome__provider-desc {
-  font: var(--fw-regular) var(--text-micro) / 1 var(--font);
+  font: var(--fw-normal) var(--text-micro) / var(--lh-normal) var(--font);
   color: var(--text-3);
   grid-column: 1;
 }
@@ -420,26 +475,37 @@ function skipForNow() {
 }
 
 .welcome__more-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
 }
 
 .welcome__more-btn {
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: var(--r-full);
   background: transparent;
   color: var(--text-2);
   font: var(--fw-medium) var(--text-micro) / 1 var(--font);
-  padding: 6px 14px;
+  padding: 8px 14px;
   cursor: pointer;
   transition: background var(--speed-quick), color var(--speed-quick), border-color var(--speed-quick);
-  white-space: nowrap;
+  text-align: center;
 }
 
 .welcome__more-btn:hover {
   background: var(--surface-hover);
   color: var(--text-1);
   border-color: var(--text-3);
+}
+
+@media (max-width: 540px) {
+  .welcome {
+    padding: 12px;
+  }
+
+  .welcome__card {
+    max-block-size: calc(100dvh - 24px);
+  }
 }
 </style>

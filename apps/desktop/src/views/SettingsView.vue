@@ -2,18 +2,20 @@
 import { ref } from 'vue'
 
 import { useI18n } from '../i18n'
+import SettingsProfiles from '../components/settings/SettingsProfiles.vue'
 import SettingsProvider from '../components/settings/SettingsProvider.vue'
 import SettingsEngine from '../components/settings/SettingsEngine.vue'
 import SettingsTheme from '../components/settings/SettingsTheme.vue'
 import SettingsShortcuts from '../components/settings/SettingsShortcuts.vue'
 import SettingsAbout from '../components/settings/SettingsAbout.vue'
 
-type SettingsTab = 'providers' | 'engine' | 'theme' | 'shortcuts' | 'about'
+type SettingsTab = 'profiles' | 'providers' | 'engine' | 'theme' | 'shortcuts' | 'about'
 
 const { t } = useI18n()
-const activeTab = ref<SettingsTab>('providers')
+const activeTab = ref<SettingsTab>('profiles')
 
 const tabs: { id: SettingsTab; icon: string }[] = [
+  { id: 'profiles', icon: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' },
   { id: 'providers', icon: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' },
   { id: 'engine', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { id: 'theme', icon: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z' },
@@ -40,7 +42,8 @@ const tabs: { id: SettingsTab; icon: string }[] = [
     </aside>
 
     <section class="settings__content">
-      <SettingsProvider  v-if="activeTab === 'providers'" />
+      <SettingsProfiles v-if="activeTab === 'profiles'" />
+      <SettingsProvider  v-else-if="activeTab === 'providers'" />
       <SettingsEngine    v-else-if="activeTab === 'engine'" />
       <SettingsTheme     v-else-if="activeTab === 'theme'" />
       <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" />

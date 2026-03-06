@@ -39,8 +39,8 @@ const HIDDEN_TYPES = new Set(['step-start', 'step-finish', 'snapshot', 'agent', 
 interface FormattedMessage extends ChatThreadMessage {
   /** Parts in original order, filtered and typed for rendering */
   visibleParts: VisiblePart[]
-  /** Whether there is any text content (for thinking indicator) */
-  hasText: boolean
+  /** Whether there is any visible activity that should replace the thinking dots. */
+  hasVisibleActivity: boolean
   /** Model label for display (e.g. "anthropic · claude-sonnet-4-20250514") */
   modelLabel: string | undefined
   artifactSummary?: TurnArtifactSummary
@@ -64,18 +64,22 @@ const formattedMessages = computed<FormattedMessage[]>(() => {
 
   return props.messages.map((message) => {
     const visibleParts: VisiblePart[] = []
-    let hasText = false
+    let hasVisibleActivity = false
 
     for (const part of message.parts ?? []) {
       const vtype = classifyPartType(part.type)
       if (vtype === null) continue
 
       const vp: VisiblePart = { part, vtype }
-      if (vtype === 'text') hasText = hasText || !!(part.text?.trim())
+      if (!hasVisibleActivity) {
+        if (vtype === 'text' || vtype === 'reasoning') {
+          hasVisibleActivity = !!part.text?.trim()
+        } else {
+          hasVisibleActivity = true
+        }
+      }
       visibleParts.push(vp)
     }
-
-
 
     const modelLabel = message.modelInfo
       ? `${message.modelInfo.providerID} · ${message.modelInfo.modelID}`
@@ -84,12 +88,51 @@ const formattedMessages = computed<FormattedMessage[]>(() => {
     return {
       ...message,
       visibleParts,
-      hasText,
+      hasVisibleActivity,
       modelLabel,
       artifactSummary: props.turnArtifactsByTurnId?.[message.artifactTurnId ?? message.id],
     }
   })
 })
+
+const lastMessage = computed(() => props.messages[props.messages.length - 1] ?? null)
+
+const lastTurnArtifact = computed(() => {
+  const turnId = lastMessage.value?.artifactTurnId
+  return turnId ? props.turnArtifactsByTurnId?.[turnId] ?? null : null
+})
+
+function partRenderSignature(part: MessagePart): string {
+  if (part.type === 'text' || part.type === 'reasoning') {
+    return `${part.type}:${part.text?.length ?? 0}`
+  }
+  if (part.type === 'tool') {
+    return `${part.type}:${part.tool?.status ?? 'pending'}:${part.tool?.title?.length ?? 0}:${part.tool?.output?.length ?? 0}`
+  }
+  if (part.type === 'file') {
+    return `${part.type}:${part.file?.filename?.length ?? 0}:${part.file?.url?.length ?? 0}`
+  }
+  if (part.type === 'patch') {
+    return `${part.type}:${part.patch?.hash ?? ''}:${part.patch?.files.length ?? 0}`
+  }
+  if (part.type === 'retry') {
+    return `${part.type}:${part.retry?.attempt ?? 0}:${part.retry?.error?.length ?? 0}`
+  }
+  if (part.type === 'command') {
+    return `${part.type}:${part.command?.name ?? ''}`
+  }
+  return part.type
+}
+
+function messageRenderSignature(message: ChatThreadMessage | null): string {
+  if (!message) return ''
+  return [
+    message.id,
+    message.streaming ? 'streaming' : 'steady',
+    (message.parts ?? []).length,
+    (message.parts ?? []).map(partRenderSignature).join('|'),
+  ].join(':')
+}
 
 const handleScroll = () => {
   const el = conversationRef.value
@@ -107,7 +150,14 @@ const scrollToBottom = async (force = false) => {
 }
 
 watch(
-  () => [props.messages, props.turnArtifactsByTurnId, props.sessionArtifactSummary],
+  [
+    () => props.messages.length,
+    () => messageRenderSignature(lastMessage.value),
+    () => lastTurnArtifact.value?.updatedAt ?? '',
+    () => lastTurnArtifact.value?.files.length ?? 0,
+    () => props.sessionArtifactSummary?.files.length ?? 0,
+    () => props.sessionArtifactSummary?.error ?? '',
+  ],
   () => { void scrollToBottom() },
 )
 
@@ -127,8 +177,8 @@ onMounted(() => { void scrollToBottom(true) })
           :avatar="message.avatar"
           :model-label="message.role === 'ai' ? message.modelLabel : undefined"
         >
-          <!-- Thinking indicator (before any text arrives) -->
-          <div v-if="message.streaming && !message.hasText" class="thinking">
+          <!-- Thinking indicator (only before any visible activity arrives) -->
+          <div v-if="message.streaming && !message.hasVisibleActivity" class="thinking">
             <span class="thinking-dot" />
             <span class="thinking-dot" />
             <span class="thinking-dot" />

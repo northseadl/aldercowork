@@ -109,6 +109,108 @@ async function waitAbortable(delayMs: number, signal: AbortSignal): Promise<void
   })
 }
 
+const PRESERVED_ASSISTANT_PART_TYPES = new Set<PartType>([
+  'reasoning',
+  'file',
+  'tool',
+  'patch',
+  'retry',
+])
+
+function preferLongerText(primary: string | undefined, fallback: string | undefined): string | undefined {
+  if (primary === undefined) return fallback
+  if (fallback === undefined) return primary
+  return primary.length >= fallback.length ? primary : fallback
+}
+
+function mergeToolState(
+  current: MessagePart['tool'] | undefined,
+  remote: MessagePart['tool'] | undefined,
+): MessagePart['tool'] | undefined {
+  if (!current) return remote
+  if (!remote) return current
+
+  return {
+    ...current,
+    ...remote,
+    input: remote.input.length > 0 ? remote.input : current.input,
+    output: remote.output ?? current.output,
+    title: remote.title ?? current.title,
+    status: remote.status ?? current.status,
+    attachments: remote.attachments?.length ? remote.attachments : current.attachments,
+  }
+}
+
+function mergeAssistantPart(current: MessagePart | undefined, remote: MessagePart): MessagePart {
+  if (!current || current.type !== remote.type) return remote
+
+  if (remote.type === 'text' || remote.type === 'reasoning') {
+    return {
+      ...remote,
+      text: preferLongerText(remote.text, current.text) ?? '',
+    }
+  }
+
+  if (remote.type === 'file') {
+    return {
+      ...remote,
+      file: remote.file ?? current.file,
+    }
+  }
+
+  if (remote.type === 'tool') {
+    return {
+      ...remote,
+      tool: mergeToolState(current.tool, remote.tool),
+    }
+  }
+
+  if (remote.type === 'patch') {
+    return {
+      ...remote,
+      patch: remote.patch ?? current.patch,
+    }
+  }
+
+  if (remote.type === 'retry') {
+    return {
+      ...remote,
+      retry: remote.retry ?? current.retry,
+    }
+  }
+
+  return remote
+}
+
+function reconcileAssistantParts(currentParts: MessagePart[], remoteParts: MessagePart[]): MessagePart[] {
+  if (remoteParts.length === 0) return currentParts
+
+  const remoteById = new Map(remoteParts.map((part) => [part.id, part]))
+  const seenRemoteIds = new Set<string>()
+  const merged: MessagePart[] = []
+
+  for (const current of currentParts) {
+    const remote = remoteById.get(current.id)
+    if (remote) {
+      merged.push(mergeAssistantPart(current, remote))
+      seenRemoteIds.add(remote.id)
+      continue
+    }
+
+    if (PRESERVED_ASSISTANT_PART_TYPES.has(current.type)) {
+      merged.push(current)
+    }
+  }
+
+  for (const remote of remoteParts) {
+    if (!seenRemoteIds.has(remote.id)) {
+      merged.push(remote)
+    }
+  }
+
+  return merged
+}
+
 // ---------------------------------------------------------------------------
 // Reconcile helper
 // ---------------------------------------------------------------------------
@@ -138,19 +240,16 @@ async function reconcileAssistantMessage(
     const target = assistants[assistants.length - 1]
     const mapped = mapRemoteMessage(target)
 
-    // Merge strategy: supplement metadata, but PRESERVE streaming parts.
-    // Streaming parts include reasoning, tool calls, and other process data
-    // that backends may strip from stored messages.
+    // Final reconcile should repair durable state without deleting live-only
+    // process parts that some backends omit from stored messages.
     aiMsg.id = mapped.id
     if (mapped.modelInfo) aiMsg.modelInfo = mapped.modelInfo
     if (mapped.createdAt) aiMsg.createdAt = mapped.createdAt
     if (mapped.tokens) aiMsg.tokens = mapped.tokens
     if (mapped.cost !== undefined) aiMsg.cost = mapped.cost
 
-    // Only replace parts if streaming produced nothing useful
-    const hasStreamContent = aiMsg.parts.some((p) => p.type === 'text' && p.text?.trim())
-    if (!hasStreamContent && mapped.parts.length > 0) {
-      aiMsg.parts = mapped.parts
+    if (mapped.parts.length > 0) {
+      aiMsg.parts = reconcileAssistantParts(aiMsg.parts, mapped.parts)
     }
     return lastUserId
   } catch (e: unknown) {

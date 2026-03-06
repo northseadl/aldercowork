@@ -8,7 +8,7 @@
 
 export type AppMode = 'standalone' | 'enterprise'
 
-/** Application mode — decided at build time, immutable at runtime */
+/** Startup hint only. Runtime identity now comes from the active profile registry. */
 export const APP_MODE: AppMode =
     (import.meta.env.VITE_APP_MODE as AppMode) || 'standalone'
 

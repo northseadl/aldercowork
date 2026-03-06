@@ -18,18 +18,16 @@
 # =============================================================================
 set -euo pipefail
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BOLD='\033[1m'
-RESET='\033[0m'
+HOOK_DIR=$(cd "$(dirname "$0")" && pwd)
+HOOK_NAME="pre-commit"
 
-info()  { echo -e "${GREEN}[pre-commit]${RESET} $*"; }
-warn()  { echo -e "${YELLOW}[pre-commit]${RESET} $*"; }
-fail()  { echo -e "${RED}[pre-commit]${RESET} $*"; exit 1; }
+# shellcheck source=.githooks/lib/common.sh
+. "${HOOK_DIR}/lib/common.sh"
+# shellcheck source=.githooks/lib/pre-commit.sh
+. "${HOOK_DIR}/lib/pre-commit.sh"
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
-cd "$REPO_ROOT"
+setup_repo_root
+load_staged_files
 
 # ---------------------------------------------------------------------------
 # 1. Branch protection — block direct commits to main and develop
@@ -53,66 +51,14 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Secret leak detection — scan staged files for common patterns
 # ---------------------------------------------------------------------------
-STAGED_FILES=()
-while IFS= read -r -d '' file; do
-  STAGED_FILES+=("$file")
-done < <(git diff --cached --name-only -z --diff-filter=ACM 2>/dev/null || true)
-
-if [ "${SKIP_SECRET_SCAN:-}" = "1" ]; then
-  warn "SKIP_SECRET_SCAN=1 — 跳过密钥扫描"
-elif [ "${#STAGED_FILES[@]}" -gt 0 ]; then
-  # Patterns that indicate leaked secrets (case-insensitive)
-  SECRET_PATTERNS=(
-    'sk-[a-zA-Z0-9]{20,}'           # OpenAI API key
-    'AKIA[0-9A-Z]{16}'              # AWS access key
-    'ghp_[a-zA-Z0-9]{36}'           # GitHub PAT
-    'gho_[a-zA-Z0-9]{36}'           # GitHub OAuth token
-    'glpat-[a-zA-Z0-9\-]{20,}'     # GitLab PAT
-    'xoxb-[0-9]{10,}'               # Slack bot token
-    'PRIVATE[_ ]KEY'                 # Private key header
-    'BEGIN RSA PRIVATE KEY'          # RSA key
-    'BEGIN OPENSSH PRIVATE KEY'      # SSH key
-  )
-
-  for pattern in "${SECRET_PATTERNS[@]}"; do
-    MATCHES=()
-
-    for file in "${STAGED_FILES[@]}"; do
-      case "$file" in
-        *.lock|pnpm-lock.yaml|Cargo.lock|*.png|*.ico|*.icns) continue ;;
-      esac
-
-      # Scan staged content (index) instead of working tree.
-      if git show ":$file" 2>/dev/null | grep -qiE "$pattern"; then
-        MATCHES+=("$file")
-      fi
-    done
-
-    if [ "${#MATCHES[@]}" -gt 0 ]; then
-      MATCH_LIST=$(printf '  - %s\n' "${MATCHES[@]}")
-      fail "检测到疑似密钥泄漏！匹配模式: ${BOLD}$pattern${RESET}
-文件:
-$MATCH_LIST
-请检查并移除敏感信息后再提交。如果是误报，使用 ${BOLD}git commit --no-verify${RESET} 绕过。"
-    fi
-  done
-fi
+run_secret_scan
 
 # ---------------------------------------------------------------------------
 # 3. Rust cargo check (only if Rust files changed)
 # ---------------------------------------------------------------------------
-RUST_CHANGED=""
-if [ "${#STAGED_FILES[@]}" -gt 0 ]; then
-  for file in "${STAGED_FILES[@]}"; do
-    case "$file" in
-      *.rs|*.toml) RUST_CHANGED="1" ;;
-    esac
-  done
-fi
-
-if [ "${SKIP_RUST_CHECK:-}" = "1" ]; then
+if env_flag_enabled SKIP_RUST_CHECK; then
   warn "SKIP_RUST_CHECK=1 — 跳过 cargo check"
-elif [ -n "$RUST_CHANGED" ]; then
+elif staged_files_match_any '*.rs' '*.toml'; then
   info "Rust 文件变更，执行 cargo check..."
   if ! (cd apps/desktop/src-tauri && cargo check 2>&1); then
     fail "cargo check 失败，请修复编译错误后再提交。"
@@ -123,18 +69,9 @@ fi
 # ---------------------------------------------------------------------------
 # 4. TypeScript type check (only if TS/Vue files changed)
 # ---------------------------------------------------------------------------
-TS_CHANGED=""
-if [ "${#STAGED_FILES[@]}" -gt 0 ]; then
-  for file in "${STAGED_FILES[@]}"; do
-    case "$file" in
-      *.ts|*.vue) TS_CHANGED="1" ;;
-    esac
-  done
-fi
-
-if [ "${SKIP_TS_CHECK:-}" = "1" ]; then
+if env_flag_enabled SKIP_TS_CHECK; then
   warn "SKIP_TS_CHECK=1 — 跳过 TypeScript 类型检查"
-elif [ -n "$TS_CHANGED" ]; then
+elif staged_files_match_any '*.ts' '*.vue'; then
   info "TypeScript/Vue 文件变更，执行 vue-tsc..."
   if command -v pnpm >/dev/null 2>&1; then
     TS_CMD='pnpm exec vue-tsc --noEmit'

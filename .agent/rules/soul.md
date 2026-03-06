@@ -11,10 +11,12 @@
 - **Single-writer persistence**: 同一持久化文件/键空间必须有唯一写入所有者，避免读改写竞态导致状态回滚。
 - **Executable integrity gate**: 任何“下载后执行”的二进制都必须先通过 checksum/签名校验，校验失败必须硬阻断。
 - **Quarantine-before-install**: 任何外部下载的扩展/插件/技能都必须先进入隔离区做结构校验与风险审计，禁止直接落入正式运行目录。
+- **Profile-root tenant isolation**: 多租户桌面应用的隔离边界必须是整棵 profile 数据根 + 运行时上下文（workspace/kernel-state/credentials/marketplace），只隔离单一子目录属于伪隔离。
 - **Stream lifecycle ownership**: 任何流式读取都必须具备超时、可取消入口与 finally 清理（cancel/release），否则视为资源泄漏风险。
 - **Bounded retry budget**: 自动重试/重连必须具备上限与指数退避，只对可恢复故障生效，禁止无限重试放大故障。
 - **Bounded reactive memory**: 对长生命周期前端状态（消息列表/附件队列）必须设置容量预算与窗口化策略，禁止无上限累积。
 - **Modal focus containment**: 任何阻断式弹层都必须具备 focus trap、初始焦点与焦点恢复，防止键盘焦点穿透背景。
+- **Viewport-bounded overlays**: 任何承载动态列表/表单的弹层或引导页都必须受视口高度约束，并把滚动限制在内容区而非整张卡片；主操作区应尽量固定，避免内容增长时按钮被挤出可视区。
 - **Incremental DOM for streaming**: 流式内容禁止使用 innerHTML 全量替换（CSS 动画每帧重启）；必须用 DOM diff（morphdom/vdom）做增量 patch + TypeWriter buffer 做自适应速率释放，保证旧节点稳定、新节点渐显。
 - **Backpressured streaming renders**: 流式消费者必须 await 一个“帧级 commit barrier”（rAF 调度 + paint 后 yield），让事件摄入速度不可能跑赢浏览器绘制；“节流直接 return 但不 yield”会把更新压成 burst，造成卡顿与节奏失真。
 - **UI intent parity**: 交互可用态（按钮可点/快捷键可发）必须与执行入口 guard 条件一致，禁止“前端显示可执行但 handler 直接 return”的静默失败。
@@ -47,3 +49,4 @@
 - **Lossy config shadow state**: 用布尔/枚举影子态（如 `hasKey=true`）代替真实配置值做变更探测，会漏掉“值变了但影子不变”的关键事件（如密钥轮换）；应以真实配置 hash/revision 作为重启与同步触发源。
 - **Route-hop volatile payload**: 跨路由只依赖 `window.dispatchEvent` 传递一次性负载会因组件尚未挂载而丢失；必须提供 durable handoff（sessionStorage/store）兜底。
 - **Text-gated state repair**: 用“是否已有文本内容”决定是否跳过整条消息的最终 reconcile，会让 tool/file/patch 等非文本 part 失去最终态修正机会；应按 part 类型与 id 做选择性 merge。
+- **Late-bound tenant writes**: 在多租户/多 profile 应用里，如果持久化目标在“写入时”才按 active tenant 解析，而前端又有 debounce/异步 reload，旧租户的延迟写入会污染新租户；必须在上下文切换时取消 pending writes，并在 reload 前先把内存状态重置为 tenant-local 基线。

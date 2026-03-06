@@ -43,8 +43,6 @@ const outputPlaceholder = computed(() => {
 
   return t('chat.tools.noOutput')
 })
-
-const detailsRef = ref<HTMLElement | null>(null)
 </script>
 
 <template>
@@ -128,11 +126,7 @@ const detailsRef = ref<HTMLElement | null>(null)
       </button>
     </div>
 
-    <div
-      ref="detailsRef"
-      class="sk-details-wrapper"
-      :class="{ 'is-open': expanded }"
-    >
+    <div class="sk-details-wrapper" :class="{ 'is-open': expanded }">
       <section class="sk-details">
         <div v-if="props.input" class="sk-section">
           <div class="sk-label">{{ t('chat.tools.input') }}</div>
