@@ -61,16 +61,94 @@ const { activeSession, activeSessionId } = storeToRefs(sessionStore)
 const { skillCount } = storeToRefs(installedSkillStore)
 const { configured, loaded: settingsLoaded } = storeToRefs(settingsStore)
 
+function hasStoreMethod<T extends object>(
+  store: T,
+  methodName: string,
+): store is T & Record<string, (...args: never[]) => unknown> {
+  return typeof (store as Record<string, unknown>)[methodName] === 'function'
+}
+
+async function reloadSettingsStore() {
+  // HMR can temporarily keep an older Pinia store instance alive.
+  if (hasStoreMethod(settingsStore, 'reload')) {
+    await settingsStore.reload()
+    return
+  }
+  await settingsStore.init()
+}
+
+function resetSessionStoreForProfile() {
+  if (hasStoreMethod(sessionStore, 'resetForProfile')) {
+    sessionStore.resetForProfile()
+    return
+  }
+
+  sessionStore.sessions = []
+  sessionStore.activeSessionId = ''
+  sessionStore.error = null
+  sessionStore.loading = false
+  sessionStore.creating = false
+}
+
+function resetMarketplaceSkillStoreForProfile() {
+  if (hasStoreMethod(marketplaceSkillStore, 'resetForProfile')) {
+    marketplaceSkillStore.resetForProfile()
+    return
+  }
+
+  marketplaceSkillStore.provider = null
+  marketplaceSkillStore.query = ''
+  marketplaceSkillStore.items = []
+  marketplaceSkillStore.details = {}
+  marketplaceSkillStore.sourceLabel = ''
+  marketplaceSkillStore.loadError = null
+}
+
+function resetSkillAuditStoreForProfile() {
+  if (hasStoreMethod(skillAuditStore, 'resetForProfile')) {
+    skillAuditStore.resetForProfile()
+    return
+  }
+
+  skillAuditStore.stagedSkill = null
+  skillAuditStore.activeReport = null
+  skillAuditStore.reportVisible = false
+  skillAuditStore.error = null
+}
+
+async function reloadWorkspaceStoreForProfile() {
+  if (hasStoreMethod(workspaceStore, 'reloadForProfile')) {
+    await workspaceStore.reloadForProfile()
+    return
+  }
+
+  workspaceStore.activeWorkspace = null
+  workspaceStore.recentWorkspaces = []
+  workspaceStore.loaded = false
+  await workspaceStore.loadFromSettings()
+}
+
+async function reloadRunbookStoreForProfile() {
+  if (hasStoreMethod(runbookStore, 'reload')) {
+    await runbookStore.reload()
+    return
+  }
+
+  runbookStore.runbooks = []
+  runbookStore.selectedId = ''
+  await runbookStore.loadRunbooks()
+}
+
 async function reloadProfileBoundState() {
   await refreshPaths()
-  await settingsStore.reload()
+  await reloadSettingsStore()
   providerStatesSnapshot = JSON.stringify(settingsStore.providerStates)
-  sessionStore.resetForProfile()
-  marketplaceSkillStore.resetForProfile()
-  skillAuditStore.resetForProfile()
-  await workspaceStore.reloadForProfile()
+  resetSessionStoreForProfile()
+  resetMarketplaceSkillStoreForProfile()
+  resetSkillAuditStoreForProfile()
+  await reloadWorkspaceStoreForProfile()
   await installedSkillStore.loadAll()
-  await runbookStore.reload()
+  await reloadRunbookStoreForProfile()
 }
 
 const handleProfileContextChanged = () => {
