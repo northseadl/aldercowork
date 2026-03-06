@@ -1,530 +1,466 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 
-import { SkillDetail, SkillImportDialog, SkillInspectOverlay, SkillListItem } from '../components/skills'
-import type { SkillActivationScope } from '../components/skills'
-import { useI18n } from '../i18n'
+import {
+  SkillDetail,
+  SkillImportDialog,
+  SkillInspectOverlay,
+  SkillListItem,
+  SkillMarketplaceItem,
+  type SkillDetailSelection,
+} from '../components/skills'
+import type { StagedSkillRecord } from '@aldercowork/skill-schema'
 import { useConfirm, useToast } from '../composables'
-import { useSkillStore } from '../stores/skill'
+import { useInstalledSkillStore } from '../stores/installedSkill'
+import { useMarketplaceSkillStore } from '../stores/marketplaceSkill'
+import { useSkillAuditStore } from '../stores/skillAudit'
+import { useWorkspaceStore } from '../stores/workspace'
 
-const { t } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
-const skillStore = useSkillStore()
 
-const {
-  filteredSkills,
-  inspectVisible,
-  searchKeyword,
-  selectedSkill,
-  selectedSkillId,
-  toolsToCall,
-  scanning,
-  importing,
-  importError,
-  loaded,
-  loadError,
-  skills,
-  activating,
-} = storeToRefs(skillStore)
+const installedStore = useInstalledSkillStore()
+const marketplaceStore = useMarketplaceSkillStore()
+const auditStore = useSkillAuditStore()
+const workspaceStore = useWorkspaceStore()
 
+const { skills, loading: installedLoading, updating, loadError: installedError } = storeToRefs(installedStore)
+const { items: marketplaceItems, loading: marketplaceLoading, loadingDetail, loadError: marketplaceError, query, sourceLabel, details } = storeToRefs(marketplaceStore)
+const { stagedSkill, activeReport, reportVisible, staging, auditing, installing, error: auditError } = storeToRefs(auditStore)
+const { activePath } = storeToRefs(workspaceStore)
+
+const selectedInstalledId = ref('')
+const selectedMarketplaceId = ref('')
+const selectedKind = ref<'installed' | 'marketplace' | 'staged'>('installed')
 const importDialogVisible = ref(false)
+let searchDebounce: ReturnType<typeof setTimeout> | null = null
 
-const selectSkill = (id: string) => {
-  skillStore.selectSkill(id)
+const selectedInstalled = computed(() => skills.value.find((skill) => skill.id === selectedInstalledId.value) ?? null)
+const selectedMarketplaceKey = computed(() => (selectedMarketplaceId.value ? `${selectedMarketplaceId.value}:latest` : ''))
+const selectedMarketplaceDetail = computed(() => details.value[selectedMarketplaceKey.value] ?? null)
+
+const detailSelection = computed<SkillDetailSelection | null>(() => {
+  if (selectedKind.value === 'staged' && stagedSkill.value) {
+    return { kind: 'staged', skill: stagedSkill.value }
+  }
+  if (selectedKind.value === 'marketplace' && selectedMarketplaceDetail.value) {
+    return { kind: 'marketplace', skill: selectedMarketplaceDetail.value }
+  }
+  if (selectedInstalled.value) {
+    return { kind: 'installed', skill: selectedInstalled.value }
+  }
+  return null
+})
+
+async function selectMarketplace(skillId: string) {
+  selectedMarketplaceId.value = skillId
+  selectedKind.value = 'marketplace'
+  await marketplaceStore.loadSkillDetail(skillId)
 }
 
-const openInspect = () => {
-  skillStore.openInspect()
+function selectInstalled(skillId: string) {
+  selectedInstalledId.value = skillId
+  selectedKind.value = 'installed'
 }
 
-const closeInspect = () => {
-  skillStore.closeInspect()
+async function refreshAll() {
+  await Promise.all([
+    installedStore.loadAll(),
+    marketplaceStore.searchSkills(query.value),
+  ])
 }
 
-const confirmInspect = () => {
-  skillStore.confirmInspect()
+async function stageAndAudit(task: Promise<StagedSkillRecord>) {
+  const staged = await task
+  await auditStore.setMarketplaceStage(staged)
+  selectedKind.value = 'staged'
+  const report = await auditStore.runAudit(staged.stagedId)
+  auditStore.openReport(report)
+  toast.info(report.summary)
 }
 
-const openImportDialog = () => {
-  importDialogVisible.value = true
+async function handleStageMarketplace() {
+  if (!selectedMarketplaceDetail.value) return
+  await stageAndAudit(marketplaceStore.downloadSkill(selectedMarketplaceDetail.value.id, selectedMarketplaceDetail.value.version))
 }
 
-const closeImportDialog = () => {
+async function handleStageUpdate() {
+  if (!selectedInstalled.value) return
+  await stageAndAudit(marketplaceStore.stageUpdate(selectedInstalled.value.id, activePath.value ?? undefined))
+}
+
+async function handleArchiveImport() {
+  const staged = await auditStore.stageArchive()
   importDialogVisible.value = false
+  if (!staged) return
+  selectedKind.value = 'staged'
+  const report = await auditStore.runAudit(staged.stagedId)
+  auditStore.openReport(report)
 }
 
-const handleImportArchive = async () => {
-  try {
-    const name = await skillStore.importArchive()
-    if (name) {
-      toast.info(t('skills.import.successArchive').replace('{name}', name))
-      importDialogVisible.value = false
-    }
-  } catch {
-    // Error is shown in dialog via importError
-  }
+async function handleGitImport(url: string) {
+  const staged = await auditStore.stageGit(url)
+  importDialogVisible.value = false
+  selectedKind.value = 'staged'
+  const report = await auditStore.runAudit(staged.stagedId)
+  auditStore.openReport(report)
 }
 
-const handleImportGit = async (url: string) => {
-  try {
-    const name = await skillStore.importGit(url)
-    toast.info(t('skills.import.successGit').replace('{name}', name))
-    importDialogVisible.value = false
-  } catch {
-    // Error is shown in dialog via importError
-  }
+async function handleInstallStaged() {
+  const installed = await auditStore.approveInstall()
+  installedStore.upsertInstalledSkill(installed)
+  await installedStore.loadAll()
+  selectedInstalledId.value = installed.id
+  selectedKind.value = 'installed'
+  toast.info(`Installed ${installed.displayName}`)
 }
 
-const handleRemoveSkill = async (skillId: string) => {
+async function handleActivate(scope: 'global' | 'workspace') {
+  if (!selectedInstalled.value) return
+  await installedStore.activateSkill(selectedInstalled.value.id, scope)
+}
+
+async function handleDeactivate(scope: 'global' | 'workspace') {
+  if (!selectedInstalled.value) return
+  await installedStore.deactivateSkill(selectedInstalled.value.id, scope)
+}
+
+async function handleRemove() {
+  if (!selectedInstalled.value) return
   const decision = await confirm({
-    title: t('skills.removeConfirmTitle'),
-    message: t('skills.removeConfirm').replace('{name}', skillId),
-    confirmLabel: t('skills.detail.removeAction'),
+    title: 'Remove Skill',
+    message: `Remove ${selectedInstalled.value.displayName}? This cannot be undone.`,
+    confirmLabel: 'Remove',
     variant: 'danger',
   })
   if (decision !== 'confirm') return
+  await installedStore.removeSkill(selectedInstalled.value.id)
+  selectedInstalledId.value = skills.value[0]?.id ?? ''
+}
 
-  try {
-    await skillStore.removeSkill(skillId)
-    toast.info(t('skills.import.removed').replace('{name}', skillId))
-  } catch (error: unknown) {
-    toast.error(error instanceof Error ? error.message : String(error))
+async function handleViewReport() {
+  if (selectedKind.value === 'staged' && stagedSkill.value) {
+    const report = stagedSkill.value.audit ?? await auditStore.loadStagedReport(stagedSkill.value.stagedId)
+    auditStore.openReport(report)
+    return
+  }
+
+  if (selectedInstalled.value) {
+    const report = await auditStore.loadInstalledReport(selectedInstalled.value.id, selectedInstalled.value.version)
+    auditStore.openReport(report)
   }
 }
 
-async function handleActivateSkill(scope: SkillActivationScope) {
-  if (!selectedSkill.value) return
-  try {
-    await skillStore.activateSkill(selectedSkill.value.id, scope)
-    toast.info(t('skills.activation.activated'))
-  } catch (error: unknown) {
-    toast.error(error instanceof Error ? error.message : String(error))
-  }
-}
-
-async function handleDeactivateSkill(scope: SkillActivationScope) {
-  if (!selectedSkill.value) return
-  try {
-    await skillStore.deactivateSkill(selectedSkill.value.id, scope)
-    toast.info(t('skills.activation.deactivated'))
-  } catch (error: unknown) {
-    toast.error(error instanceof Error ? error.message : String(error))
-  }
-}
-
-function clearSearch() {
-  searchKeyword.value = ''
-}
-
-/** True when user has typed a search query but no results match */
-const isSearchEmpty = ref(false)
-
-/** True when there are genuinely no skills installed */
-const isNoSkillsInstalled = ref(false)
-
-// Computed via watchers to avoid reactivity issues with storeToRefs
-import { watchEffect } from 'vue'
-
-watchEffect(() => {
-  const hasKeyword = searchKeyword.value.trim().length > 0
-  isSearchEmpty.value = loaded.value && !scanning.value && hasKeyword && filteredSkills.value.length === 0
-  isNoSkillsInstalled.value = loaded.value && !scanning.value && !hasKeyword && skills.value.length === 0
+onMounted(async () => {
+  await refreshAll()
 })
 
-onMounted(() => {
-  if (!loaded.value) {
-    skillStore.loadSkills()
-  }
+watch(query, (nextQuery) => {
+  if (searchDebounce) clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(() => {
+    void marketplaceStore.searchSkills(nextQuery)
+  }, 220)
 })
+
+watch(
+  [skills, marketplaceItems, stagedSkill],
+  async () => {
+    if (stagedSkill.value) {
+      selectedKind.value = 'staged'
+      return
+    }
+
+    if (!selectedInstalledId.value && skills.value.length) {
+      selectedInstalledId.value = skills.value[0].id
+    }
+
+    if (!selectedMarketplaceId.value && marketplaceItems.value.length) {
+      selectedMarketplaceId.value = marketplaceItems.value[0].id
+      await marketplaceStore.loadSkillDetail(selectedMarketplaceId.value)
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
   <section class="skills-view">
     <header class="skills-view__toolbar">
-      <div>
-        <h1 class="skills-view__title">{{ t('skills.panelTitle') }}</h1>
-        <p class="skills-view__subtitle">{{ t('skills.panelSubtitle') }}</p>
+      <div class="skills-view__headline">
+        <h1 class="skills-view__title">Skills Marketplace</h1>
+        <p class="skills-view__subtitle">Search, stage, audit, install, update, and activate skills from one surface.</p>
       </div>
 
       <div class="skills-view__toolbar-actions">
-        <button
-          type="button"
-          class="skills-view__import-btn"
-          :title="t('skills.import.title')"
-          @click="openImportDialog"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="skills-view__import-icon">
-            <path d="M12 5v14" /><path d="M5 12h14" />
-          </svg>
-          {{ t('skills.import.action') }}
-        </button>
-
-        <label class="skills-view__search" for="skills-search">
-          <span class="skills-view__search-label">{{ t('skills.searchLabel') }}</span>
-          <div class="skills-view__search-wrapper">
-            <input
-              id="skills-search"
-              v-model="searchKeyword"
-              type="search"
-              class="skills-view__search-input"
-              :placeholder="t('skills.searchPlaceholder')"
-            />
-            <button
-              v-if="searchKeyword.trim()"
-              type="button"
-              class="skills-view__search-clear"
-              :aria-label="t('common.clear')"
-              @click="clearSearch"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </label>
+        <span class="skills-view__source-pill">{{ sourceLabel || 'Marketplace' }}</span>
+        <button type="button" class="skills-view__import-btn" @click="importDialogVisible = true">Manual Import</button>
+        <button type="button" class="skills-view__refresh-btn" @click="refreshAll">Refresh</button>
       </div>
     </header>
 
+    <label class="skills-view__search" for="skills-market-search">
+      <span class="skills-view__search-label">Marketplace Search</span>
+      <input
+        id="skills-market-search"
+        v-model="query"
+        type="search"
+        class="skills-view__search-input"
+        placeholder="Search skills, categories, or publishers"
+      />
+    </label>
+
     <div class="skills-view__layout">
-      <aside class="skills-view__list-pane" :aria-label="t('skills.listLabel')">
-        <p class="skills-view__result-count">
-          <span v-if="scanning" class="skills-view__scanning">{{ t('skills.scanning') }}</span>
-          <span v-else>{{ t('skills.resultCount').replace('{count}', String(filteredSkills.length)) }}</span>
-        </p>
+      <aside class="skills-view__sidebar">
+        <section class="skills-view__panel">
+          <header class="skills-view__panel-header">
+            <h2>Marketplace</h2>
+            <span>{{ marketplaceItems.length }}</span>
+          </header>
+          <p v-if="marketplaceError" class="skills-view__error">{{ marketplaceError }}</p>
+          <p v-else-if="marketplaceLoading" class="skills-view__muted">Loading marketplace…</p>
+          <div v-else-if="marketplaceItems.length" class="skills-view__list">
+            <SkillMarketplaceItem
+              v-for="skill in marketplaceItems"
+              :key="skill.id"
+              :skill="skill"
+              :selected="selectedKind === 'marketplace' && skill.id === selectedMarketplaceId"
+              @select="selectMarketplace"
+            />
+          </div>
+          <p v-else class="skills-view__muted">No marketplace skills matched this search.</p>
+        </section>
 
-        <p v-if="loadError" class="skills-view__load-error" role="alert">{{ loadError }}</p>
+        <section class="skills-view__panel">
+          <header class="skills-view__panel-header">
+            <h2>Installed</h2>
+            <span>{{ skills.length }}</span>
+          </header>
+          <p v-if="installedError" class="skills-view__error">{{ installedError }}</p>
+          <p v-else-if="installedLoading" class="skills-view__muted">Loading installed skills…</p>
+          <div v-else-if="skills.length" class="skills-view__list">
+            <SkillListItem
+              v-for="skill in skills"
+              :key="skill.id"
+              :skill="skill"
+              :selected="selectedKind === 'installed' && skill.id === selectedInstalledId"
+              @select="selectInstalled"
+            />
+          </div>
+          <p v-else class="skills-view__muted">No skills installed yet.</p>
+        </section>
 
-        <div v-if="filteredSkills.length" class="skills-view__list">
-          <SkillListItem
-            v-for="skill in filteredSkills"
-            :key="skill.id"
-            :skill="skill"
-            :selected="skill.id === selectedSkillId"
-            @select="selectSkill"
-          />
-        </div>
-
-        <!-- Empty: search returned no results -->
-        <div v-else-if="isSearchEmpty" class="skills-view__empty-list">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <p>{{ t('skills.searchNoResults') }}</p>
-          <button type="button" class="skills-view__empty-action-btn" @click="clearSearch">
-            {{ t('skills.clearSearch') }}
-          </button>
-        </div>
-
-        <!-- Empty: no skills installed at all -->
-        <div v-else-if="isNoSkillsInstalled" class="skills-view__empty-list">
-          <p>{{ t('skills.noSkillsInstalled') }}</p>
-          <button type="button" class="skills-view__empty-action-btn" @click="openImportDialog">
-            {{ t('skills.import.action') }}
-          </button>
-        </div>
+        <section class="skills-view__panel skills-view__panel--stage">
+          <header class="skills-view__panel-header">
+            <h2>Staging</h2>
+            <span>{{ stagedSkill ? '1' : '0' }}</span>
+          </header>
+          <div v-if="stagedSkill" class="skills-view__stage-card">
+            <strong>{{ stagedSkill.displayName }}</strong>
+            <p>{{ stagedSkill.summary }}</p>
+            <button type="button" class="skills-view__stage-link" @click="selectedKind = 'staged'">Review staged skill</button>
+          </div>
+          <p v-else class="skills-view__muted">Downloads and manual imports wait here until audit completes.</p>
+        </section>
       </aside>
 
-      <section class="skills-view__detail-pane" :aria-label="t('skills.detailLabel')">
+      <section class="skills-view__detail-pane">
+        <p v-if="auditError" class="skills-view__error">{{ auditError }}</p>
+        <p v-if="loadingDetail" class="skills-view__muted">Loading skill detail…</p>
         <SkillDetail
-          v-if="selectedSkill"
-          :skill="selectedSkill"
-          :activating="activating"
-          @inspect="openInspect"
-          @activate="handleActivateSkill"
-          @deactivate="handleDeactivateSkill"
-          @remove="handleRemoveSkill(selectedSkill.id)"
+          v-else-if="detailSelection"
+          :selection="detailSelection"
+          :action-busy="staging || updating"
+          :audit-busy="auditing"
+          :install-busy="installing"
+          @activate="handleActivate"
+          @deactivate="handleDeactivate"
+          @remove="handleRemove"
+          @stage-marketplace="handleStageMarketplace"
+          @update-marketplace="handleStageUpdate"
+          @run-audit="auditStore.runAudit()"
+          @install-staged="handleInstallStaged"
+          @dismiss-staged="auditStore.dismissStage()"
+          @view-report="handleViewReport"
         />
-
         <div v-else class="skills-view__detail-empty">
-          <p>{{ t('skills.selectPrompt') }}</p>
+          <p>Select a marketplace or installed skill to inspect its permissions, source, and audit state.</p>
         </div>
       </section>
     </div>
 
-    <SkillInspectOverlay
-      v-if="selectedSkill"
-      :skill="selectedSkill"
-      :tools-to-call="toolsToCall"
-      :visible="inspectVisible"
-      @cancel="closeInspect"
-      @confirm="confirmInspect"
-    />
-
     <SkillImportDialog
       :visible="importDialogVisible"
-      :importing="importing"
-      :import-error="importError"
-      @cancel="closeImportDialog"
-      @import-archive="handleImportArchive"
-      @import-git="handleImportGit"
+      :busy="staging"
+      :error="auditError"
+      @cancel="importDialogVisible = false"
+      @import-archive="handleArchiveImport"
+      @import-git="handleGitImport"
+    />
+
+    <SkillInspectOverlay
+      :visible="reportVisible"
+      :report="activeReport"
+      @close="auditStore.closeReport()"
     />
   </section>
 </template>
 
 <style scoped>
 .skills-view {
-  height: 100%;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  background: var(--content);
+  gap: calc(var(--sp) * 1.5);
+  min-height: 100%;
 }
 
 .skills-view__toolbar {
-  padding: calc(var(--sp) * 2.5) calc(var(--sp) * 3);
-  border-bottom: 1px solid var(--border);
   display: flex;
-  align-items: flex-end;
   justify-content: space-between;
   gap: calc(var(--sp) * 2);
+  flex-wrap: wrap;
+}
+
+.skills-view__headline {
+  display: grid;
+  gap: calc(var(--sp) * 0.5);
 }
 
 .skills-view__title {
   margin: 0;
-  font: var(--fw-semibold) 1.125rem / var(--lh-tight) var(--font-mono);
-  color: var(--text-1);
+  font: var(--fw-semibold) 1.6rem / var(--lh-tight) var(--font-mono);
 }
 
 .skills-view__subtitle {
-  margin: calc(var(--sp) * 0.5) 0 0;
-  color: var(--text-3);
-  font-size: var(--text-small);
+  margin: 0;
+  color: var(--text-2);
+  max-width: 56ch;
   line-height: var(--lh-normal);
 }
 
 .skills-view__toolbar-actions {
   display: flex;
-  align-items: flex-end;
-  gap: calc(var(--sp) * 1.5);
+  gap: calc(var(--sp) * 0.75);
+  align-items: center;
+  flex-wrap: wrap;
 }
 
-.skills-view__import-btn {
+.skills-view__source-pill,
+.skills-view__refresh-btn,
+.skills-view__import-btn,
+.skills-view__stage-link {
+  min-height: 34px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--content);
+  color: var(--text-2);
+  padding: 0 calc(var(--sp) * 1.25);
+  font: var(--fw-medium) var(--text-small) / 1 var(--font-mono);
+}
+
+.skills-view__source-pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 calc(var(--sp) * 1.5);
-  border: 1px solid var(--brand);
-  border-radius: var(--r-md);
-  background: var(--brand-subtle);
-  color: var(--brand);
-  font: var(--fw-semibold) var(--text-small) / 1 var(--font-mono);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--speed-regular) var(--ease),
-    color var(--speed-regular) var(--ease);
-}
-
-.skills-view__import-btn:hover {
-  background: var(--brand);
-  color: var(--text-on-brand, #fff);
-}
-
-.skills-view__import-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
+  background: color-mix(in srgb, var(--syntax-function) 10%, transparent);
+  color: var(--syntax-function);
 }
 
 .skills-view__search {
   display: grid;
-  gap: calc(var(--sp) * 0.75);
-  min-width: min(320px, 100%);
+  gap: calc(var(--sp) * 0.5);
 }
 
 .skills-view__search-label {
   color: var(--text-3);
-  font: var(--fw-medium) var(--text-micro) / 1 var(--font-mono);
+  font: var(--fw-semibold) var(--text-micro) / 1 var(--font-mono);
   text-transform: uppercase;
   letter-spacing: .04em;
 }
 
-.skills-view__search-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
 .skills-view__search-input {
-  width: 100%;
-  height: 36px;
-  border-radius: var(--r-md);
+  min-height: 42px;
+  border-radius: var(--r-lg);
   border: 1px solid var(--border);
-  background: var(--content-warm);
+  background: var(--content);
   color: var(--text-1);
-  font-size: var(--text-small);
-  padding: 0 calc(var(--sp) * 3) 0 calc(var(--sp) * 1.25);
-  outline: none;
-  transition:
-    border-color var(--speed-regular) var(--ease),
-    box-shadow var(--speed-regular) var(--ease),
-    background var(--speed-regular) var(--ease);
-}
-
-.skills-view__search-input::placeholder {
-  color: var(--text-3);
-}
-
-.skills-view__search-input:focus-visible {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-subtle);
-}
-
-.skills-view__search-clear {
-  position: absolute;
-  right: 6px;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-  border-radius: var(--r-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color var(--speed-quick), background var(--speed-quick);
-}
-
-.skills-view__search-clear:hover {
-  color: var(--text-1);
-  background: var(--surface-hover);
+  padding: 0 calc(var(--sp) * 1.25);
 }
 
 .skills-view__layout {
-  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(260px, 380px) minmax(0, 1fr);
-}
-
-.skills-view__list-pane {
-  min-height: 0;
-  border-right: 1px solid var(--border);
-  padding: calc(var(--sp) * 2);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
   gap: calc(var(--sp) * 1.5);
+  min-height: 0;
 }
 
-.skills-view__result-count {
-  margin: 0;
-  color: var(--text-3);
-  font: var(--fw-medium) var(--text-mini) / 1 var(--font-mono);
+.skills-view__sidebar {
+  display: grid;
+  gap: calc(var(--sp) * 1);
+  align-content: start;
 }
 
-.skills-view__scanning {
-  display: inline-flex;
+.skills-view__panel,
+.skills-view__detail-pane {
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: var(--content);
+  padding: calc(var(--sp) * 1.25);
+}
+
+.skills-view__panel-header {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 6px;
+  margin-bottom: calc(var(--sp) * 1);
 }
 
-.skills-view__scanning::before {
-  content: '';
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid var(--brand);
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+.skills-view__panel-header h2 {
+  margin: 0;
+  font: var(--fw-semibold) var(--text-small) / 1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-3);
 }
 
 .skills-view__list {
-  min-height: 0;
-  overflow-y: auto;
   display: grid;
-  align-content: start;
-  gap: calc(var(--sp) * 1);
-  padding-right: calc(var(--sp) * 0.5);
-}
-
-.skills-view__empty-list {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: calc(var(--sp) * 1.5);
-  text-align: center;
-  color: var(--text-3);
-  font-size: var(--text-small);
-  padding: calc(var(--sp) * 4) 0;
-}
-
-.skills-view__empty-action-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 16px;
-  border: 1px dashed var(--border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--brand);
-  font: var(--fw-medium) var(--text-small) / 1 var(--font-mono);
-  cursor: pointer;
-  transition:
-    border-color var(--speed-regular) var(--ease),
-    background var(--speed-regular) var(--ease);
-}
-
-.skills-view__empty-action-btn:hover {
-  border-color: var(--brand);
-  background: var(--brand-subtle);
-}
-
-.skills-view__load-error {
-  margin: 0;
-  padding: calc(var(--sp) * 1);
-  border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--syntax-string) 12%, transparent);
-  color: color-mix(in srgb, var(--syntax-string) 70%, var(--text-1));
-  font-size: var(--text-small);
+  gap: calc(var(--sp) * 0.75);
 }
 
 .skills-view__detail-pane {
-  min-height: 0;
-  padding: calc(var(--sp) * 2);
+  min-height: 520px;
 }
 
-.skills-view__detail-empty {
-  height: 100%;
-  border: 1px dashed var(--border);
-  border-radius: var(--r-xl);
-  display: grid;
-  place-items: center;
+.skills-view__detail-empty,
+.skills-view__muted {
+  margin: 0;
   color: var(--text-3);
   font-size: var(--text-small);
-  background: var(--content-warm);
+  line-height: var(--lh-normal);
+}
+
+.skills-view__error {
+  margin: 0;
+  border-radius: var(--r-md);
+  background: rgba(239, 68, 68, .12);
+  color: #b91c1c;
+  padding: calc(var(--sp) * 1);
+  font-size: var(--text-small);
+}
+
+.skills-view__stage-card {
+  display: grid;
+  gap: calc(var(--sp) * 0.5);
+}
+
+.skills-view__stage-card p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-small);
 }
 
 @media (max-width: 1024px) {
-  .skills-view__toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .skills-view__toolbar-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .skills-view__search {
-    min-width: 0;
-  }
-
   .skills-view__layout {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(220px, 1fr) minmax(320px, 1fr);
-  }
-
-  .skills-view__list-pane {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
   }
 }
 </style>

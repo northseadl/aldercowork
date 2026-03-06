@@ -53,14 +53,12 @@ function handleSelect(id: string) {
   runbookStore.selectRunbook(id)
 }
 
-async function handleUpdateName(name: string) {
-  if (!selectedRunbook.value) return
-  await runbookStore.updateRunbook(selectedRunbook.value.id, { name })
+async function handleUpdateName(id: string, name: string) {
+  await runbookStore.updateRunbook(id, { name })
 }
 
-async function handleUpdateContent(content: string) {
-  if (!selectedRunbook.value) return
-  await runbookStore.updateRunbook(selectedRunbook.value.id, { content })
+async function handleUpdateContent(id: string, content: string) {
+  await runbookStore.updateRunbook(id, { content })
 }
 
 async function handleDelete() {
@@ -76,8 +74,8 @@ async function handleDelete() {
   toast.info(t('runbooks.deleted'))
 }
 
-async function handleSendToChat() {
-  if (!selectedRunbook.value?.content.trim()) return
+async function handleSendToChat(id: string, content: string) {
+  if (!content.trim()) return
 
   // Ensure a session exists, then navigate and send
   const sid = await sessionStore.ensureActiveSession()
@@ -86,7 +84,9 @@ async function handleSendToChat() {
     return
   }
 
-  const content = selectedRunbook.value.content
+  // Best effort: ensure the latest editor content is persisted.
+  void runbookStore.updateRunbook(id, { content })
+
   try {
     window.sessionStorage.setItem(RUNBOOK_DRAFT_STORAGE_KEY, content)
   } catch {

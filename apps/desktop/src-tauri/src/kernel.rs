@@ -1,8 +1,11 @@
 use serde::Serialize;
 use tauri::AppHandle;
+use tauri::Emitter;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
+use std::sync::Arc;
 
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 #[cfg(unix)]
@@ -63,6 +66,7 @@ impl KernelManager {
         &mut self,
         app: &AppHandle,
         extra_env: Option<Vec<(String, String)>>,
+        state: Arc<Mutex<KernelManager>>,
     ) -> Result<KernelInfo, String> {
         // Already running
         if self.child.is_some() {
@@ -129,6 +133,7 @@ impl KernelManager {
         self.pid = Some(pid);
 
         // Spawn log reader (fire and forget)
+        let handle = app.clone();
         tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 match event {
@@ -143,6 +148,23 @@ impl KernelManager {
                             "[kernel:exit] code={:?} signal={:?}",
                             payload.code, payload.signal
                         );
+                        let message = format!(
+                            "Engine process exited (code={:?} signal={:?})",
+                            payload.code, payload.signal
+                        );
+                        let should_notify = {
+                            let mut mgr = state.lock().await;
+                            if mgr.pid_matches(pid) {
+                                mgr.set_last_error(message.clone());
+                                let _ = mgr.take_child_if_pid(pid);
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                        if should_notify {
+                            let _ = handle.emit("kernel-error", message);
+                        }
                         break;
                     }
                     _ => {}

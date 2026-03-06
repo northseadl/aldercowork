@@ -19,6 +19,10 @@ export interface DataPaths {
     kernels: string
     /** AlderCowork-managed Skills */
     skills: string
+    /** Staging area for skill installs/updates before approval */
+    skillStaging: string
+    /** Persisted local audit reports */
+    skillAuditReports: string
     /** OpenCode kernel state (isolated from ~/.config/opencode) */
     kernelState: string
 }
@@ -30,6 +34,8 @@ const BROWSER_FALLBACK: DataPaths = {
     logs: '~/.aldercowork/logs',
     kernels: '~/.aldercowork/kernels',
     skills: '~/.aldercowork/skills',
+    skillStaging: '~/.aldercowork/skill-staging',
+    skillAuditReports: '~/.aldercowork/audit-reports',
     kernelState: '~/.aldercowork/kernel-state',
 }
 

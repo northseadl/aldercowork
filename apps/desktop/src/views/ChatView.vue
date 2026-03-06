@@ -42,6 +42,8 @@ const {
   messages: chatMessages,
   isStreaming,
   streamError,
+  turnArtifacts,
+  sessionArtifacts,
   send: rawSend,
   cancelStream,
 } = useChat(
@@ -282,6 +284,7 @@ const displayMessages = computed<ChatThreadMessage[]>(() => {
 
     return {
       id: msg.id,
+      artifactTurnId: msg.turnId,
       role: msg.role === 'user' ? ('user' as const) : ('ai' as const),
       author: msg.role === 'user' ? t('chat.authorUser') : t('chat.authorAssistant'),
       timestamp: formatTime(msg.createdAt),
@@ -607,7 +610,11 @@ function attachmentDisplayName(att: FileAttachment): string {
         </button>
       </div>
 
-      <ChatThread :messages="displayMessages">
+      <ChatThread
+        :messages="displayMessages"
+        :turn-artifacts-by-turn-id="turnArtifacts"
+        :session-artifact-summary="sessionArtifacts"
+      >
         <template #compose><div /></template>
       </ChatThread>
     </template>

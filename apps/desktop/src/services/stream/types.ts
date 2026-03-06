@@ -28,6 +28,7 @@ export interface StreamState {
     completionArmed: boolean
     sawActivity: boolean
     assistantMessageId: string | null
+    latestUserMessageId: string | null
     skippedMessageIds: Set<string>
     partLookup: Map<string, MessagePart>
     respondedPermissionIds: Set<string>
@@ -40,6 +41,7 @@ export function createStreamState(): StreamState {
         completionArmed: false,
         sawActivity: false,
         assistantMessageId: null,
+        latestUserMessageId: null,
         skippedMessageIds: new Set(),
         partLookup: new Map(),
         respondedPermissionIds: new Set(),

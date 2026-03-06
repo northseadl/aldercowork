@@ -28,4 +28,12 @@ export interface RuntimeErrorDetail {
 
 export type { ChatThreadMessage, SkillPanelSkill }
 export type { SessionSummary, RichMessage } from '../stores/session'
-
+export type {
+  FileDiffRecord,
+  FileOutcome,
+  FileOutcomeSource,
+  FileOutcomeStatus,
+  SessionArtifactSummary,
+  SessionArtifactTotals,
+  TurnArtifactSummary,
+} from './artifacts'

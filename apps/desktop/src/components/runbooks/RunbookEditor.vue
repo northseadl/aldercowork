@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { Runbook } from './types'
 import { useI18n } from '../../i18n'
 
@@ -10,24 +10,49 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'update:name': [name: string]
-  'update:content': [content: string]
+  'update:name': [id: string, name: string]
+  'update:content': [id: string, content: string]
   'delete': []
-  'send': []
+  'send': [id: string, content: string]
 }>()
 
 const editingName = ref(false)
 const nameInput = ref<HTMLInputElement | null>(null)
 const localName = ref(props.runbook.name)
 const editorRef = ref<HTMLTextAreaElement | null>(null)
+const localContent = ref(props.runbook.content)
 
-watch(() => props.runbook.id, () => {
+let contentDebounce: ReturnType<typeof setTimeout> | null = null
+let contentDirty = false
+
+function flushPendingContent(runbookId: string) {
+  if (contentDebounce) {
+    clearTimeout(contentDebounce)
+    contentDebounce = null
+  }
+  if (!contentDirty) return
+  contentDirty = false
+  emit('update:content', runbookId, localContent.value)
+}
+
+watch(() => props.runbook.id, (nextId, prevId) => {
+  if (prevId) {
+    flushPendingContent(prevId)
+  }
+
   localName.value = props.runbook.name
+  localContent.value = props.runbook.content
+  contentDirty = false
   editingName.value = false
 })
 
 watch(() => props.runbook.name, (v) => {
   if (!editingName.value) localName.value = v
+})
+
+watch(() => props.runbook.content, (v) => {
+  // Keep localContent in sync with store updates unless there is unsaved local typing.
+  if (!contentDirty) localContent.value = v
 })
 
 function startEditName() {
@@ -40,7 +65,7 @@ function commitName() {
   editingName.value = false
   const trimmed = localName.value.trim()
   if (trimmed && trimmed !== props.runbook.name) {
-    emit('update:name', trimmed)
+    emit('update:name', props.runbook.id, trimmed)
   } else {
     localName.value = props.runbook.name
   }
@@ -48,23 +73,22 @@ function commitName() {
 
 // --- Content editing with debounced persistence ---
 
-let contentDebounce: ReturnType<typeof setTimeout> | null = null
-
 function handleContentInput(e: Event) {
   const value = (e.target as HTMLTextAreaElement).value
+  localContent.value = value
+  contentDirty = true
+
+  const runbookId = props.runbook.id
   if (contentDebounce) clearTimeout(contentDebounce)
   contentDebounce = setTimeout(() => {
-    emit('update:content', value)
+    contentDebounce = null
+    if (!contentDirty) return
+    contentDirty = false
+    emit('update:content', runbookId, value)
   }, 400)
 }
 
 // --- Todo checkbox toggle ---
-
-function handleEditorClick(e: MouseEvent) {
-  // Clicking in a textarea doesn't give us rich node info.
-  // Instead, we detect todo toggle by checking the line at cursor position.
-  // This is handled by the keyboard shortcut (Cmd+Enter on a todo line).
-}
 
 function handleEditorKeydown(e: KeyboardEvent) {
   const textarea = editorRef.value
@@ -161,11 +185,20 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
 }
 
-const previewHtml = computed(() => renderPreview(props.runbook.content))
+const previewHtml = computed(() => renderPreview(localContent.value))
 
 // --- View mode ---
 
 const viewMode = ref<'edit' | 'preview'>('edit')
+
+function handleSend() {
+  flushPendingContent(props.runbook.id)
+  emit('send', props.runbook.id, localContent.value)
+}
+
+onBeforeUnmount(() => {
+  flushPendingContent(props.runbook.id)
+})
 </script>
 
 <template>
@@ -217,7 +250,7 @@ const viewMode = ref<'edit' | 'preview'>('edit')
           type="button"
           class="rb-editor__send-btn"
           :title="t('runbooks.sendToChat')"
-          @click="emit('send')"
+          @click="handleSend"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="22" y1="2" x2="11" y2="13" />
@@ -250,7 +283,7 @@ const viewMode = ref<'edit' | 'preview'>('edit')
       v-if="viewMode === 'edit'"
       ref="editorRef"
       class="rb-editor__textarea"
-      :value="runbook.content"
+      :value="localContent"
       :placeholder="t('runbooks.placeholder')"
       spellcheck="false"
       @input="handleContentInput"

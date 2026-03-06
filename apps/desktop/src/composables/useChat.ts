@@ -17,6 +17,12 @@ import type {
   RichMessage,
   TokenInfo,
 } from '../stores/session'
+import type {
+  FileDiffRecord,
+  FileOutcome,
+  SessionArtifactSummary,
+  TurnArtifactSummary,
+} from '../types/artifacts'
 
 import {
   type PermissionResolver,
@@ -31,6 +37,18 @@ import {
   nowISO,
   parseToolFromPart,
 } from '../services/stream'
+import { createEmptySessionArtifactSummary } from '../types/artifacts'
+import {
+  buildSessionArtifactSummary,
+  captureArtifactBaseline,
+  createOutcomeFromDiff,
+  createProcessingOutcome,
+  extractAttachmentOutcomes,
+  extractToolAttachmentOutcomes,
+  mergeOutcomes,
+  parseFileDiffRecord,
+  resolveTurnArtifacts,
+} from '../services/stream/artifact-tracker'
 
 // Re-export types consumers need
 export type { PermissionDecision, PermissionRequest, PermissionResolver } from '../services/stream'
@@ -99,18 +117,23 @@ async function reconcileAssistantMessage(
   client: Record<string, unknown>,
   sessionId: string,
   aiMsg: RichMessage,
-): Promise<void> {
+): Promise<string | null> {
   try {
     const sessionNs = asRecord(client.session)
-    if (typeof sessionNs.messages !== 'function') return
+    if (typeof sessionNs.messages !== 'function') return null
     const result = asRecord(await (sessionNs.messages as (opts: unknown) => Promise<unknown>)({
       sessionID: sessionId,
     }))
-    if (result.error) return
+    if (result.error) return null
     const rawMessages = Array.isArray(result.data) ? (result.data as Array<Record<string, unknown>>) : []
+    const latestUserMessageId = [...rawMessages]
+      .reverse()
+      .map((item) => asRecord(item.info))
+      .find((item) => asString(item.role) === 'user')
+    const lastUserId = latestUserMessageId ? asString(latestUserMessageId.id) ?? null : null
 
     const assistants = rawMessages.filter((m) => asString(asRecord(m.info).role) === 'assistant')
-    if (!assistants.length) return
+    if (!assistants.length) return lastUserId
 
     const target = assistants[assistants.length - 1]
     const mapped = mapRemoteMessage(target)
@@ -129,8 +152,10 @@ async function reconcileAssistantMessage(
     if (!hasStreamContent && mapped.parts.length > 0) {
       aiMsg.parts = mapped.parts
     }
+    return lastUserId
   } catch (e: unknown) {
     console.warn('[useChat] reconcile failed (best effort):', e)
+    return null
   }
 }
 
@@ -153,6 +178,10 @@ export function useChat(
   const isStreaming = ref(false)
   const streamError = ref<string | null>(null)
   const sessionStatus = ref<SessionStatusType>(null)
+  const turnArtifacts = ref<Record<string, TurnArtifactSummary>>({})
+  const sessionArtifacts = ref<SessionArtifactSummary>(createEmptySessionArtifactSummary())
+  const latestCompletedTurnId = ref<string | null>(null)
+  const restoredSessionFiles = ref<FileOutcome[]>([])
 
   let activeAbort: AbortController | null = null
   let activeStreamSessionId: string | null = null
@@ -163,6 +192,7 @@ export function useChat(
   let sessionSwitchRevision = 0
   let cancelRequested = false
   let alive = true
+  let artifactLoadGeneration = 0
 
   // ---------------------------------------------------------------------------
   // Frame-paced commit scheduler
@@ -194,6 +224,138 @@ export function useChat(
     pendingCommitResolvers = []
     for (const resolve of resolvers) resolve()
   })
+
+  function rebuildSessionArtifacts(error: string | null = sessionArtifacts.value.error ?? null) {
+    sessionArtifacts.value = buildSessionArtifactSummary(
+      restoredSessionFiles.value,
+      turnArtifacts.value,
+      error,
+    )
+  }
+
+  function resetArtifactState() {
+    turnArtifacts.value = {}
+    restoredSessionFiles.value = []
+    latestCompletedTurnId.value = null
+    sessionArtifacts.value = createEmptySessionArtifactSummary()
+  }
+
+  function setArtifactError(error: string | null) {
+    rebuildSessionArtifacts(error)
+  }
+
+  function replaceTurnArtifacts(turnId: string, messageId: string, files: FileOutcome[], completed: boolean) {
+    const current = turnArtifacts.value[turnId]
+    turnArtifacts.value = {
+      ...turnArtifacts.value,
+      [turnId]: {
+        turnId,
+        messageId,
+        files: [...files].sort((a, b) => a.path.localeCompare(b.path)),
+        completed,
+        updatedAt: files[0]?.updatedAt ?? current?.updatedAt ?? nowISO(),
+      },
+    }
+    if (completed) {
+      latestCompletedTurnId.value = turnId
+    }
+    rebuildSessionArtifacts()
+  }
+
+  function upsertTurnArtifact(turnId: string, messageId: string, outcome: FileOutcome) {
+    const current = turnArtifacts.value[turnId]
+    const nextFiles = [...(current?.files ?? [])]
+    const index = nextFiles.findIndex((item) => item.path === outcome.path)
+    if (index >= 0) {
+      nextFiles[index] = mergeOutcomes(nextFiles[index], outcome)
+    } else {
+      nextFiles.push(mergeOutcomes(undefined, outcome))
+    }
+
+    turnArtifacts.value = {
+      ...turnArtifacts.value,
+      [turnId]: {
+        turnId,
+        messageId,
+        files: nextFiles.sort((a, b) => a.path.localeCompare(b.path)),
+        completed: current?.completed ?? false,
+        updatedAt: outcome.updatedAt,
+      },
+    }
+    rebuildSessionArtifacts()
+  }
+
+  function completeTurnArtifacts(turnId: string, messageId: string) {
+    const current = turnArtifacts.value[turnId]
+    if (!current) return
+
+    replaceTurnArtifacts(
+      turnId,
+      messageId,
+      current.files.map((file) => ({ ...file, messageId, live: false })),
+      true,
+    )
+  }
+
+  function syncTurnMessageId(turnId: string, messageId: string) {
+    const current = turnArtifacts.value[turnId]
+    if (!current || current.messageId === messageId) return
+
+    turnArtifacts.value = {
+      ...turnArtifacts.value,
+      [turnId]: {
+        ...current,
+        messageId,
+        files: current.files.map((file) => ({ ...file, messageId })),
+      },
+    }
+    rebuildSessionArtifacts()
+  }
+
+  async function loadSessionArtifacts(targetSid: string, loadToken: number) {
+    const c = client.value
+    if (!c || !targetSid || targetSid.startsWith('local-')) {
+      restoredSessionFiles.value = []
+      rebuildSessionArtifacts()
+      return
+    }
+
+    try {
+      const sessionNs = asRecord(asRecord(c).session)
+      if (typeof sessionNs.get !== 'function') {
+        restoredSessionFiles.value = []
+        rebuildSessionArtifacts()
+        return
+      }
+      const rawResult = await (sessionNs.get as (opts: unknown) => Promise<unknown>)({
+        sessionID: targetSid,
+      })
+      if (loadToken !== artifactLoadGeneration) return
+      if (sessionId.value !== targetSid) return
+
+      const result = asRecord(rawResult)
+      if (result.error) {
+        throw new Error(extractSdkErrorMessage(result.error, 'Failed to load session artifacts'))
+      }
+      const data = asRecord(result.data ?? rawResult)
+      const summary = asRecord(data.summary)
+      const restoredDiffs = Array.isArray(summary.diffs)
+        ? summary.diffs
+            .map(parseFileDiffRecord)
+            .filter((item): item is FileDiffRecord => item !== null)
+        : []
+
+      restoredSessionFiles.value = restoredDiffs.map((diff) =>
+        createOutcomeFromDiff(diff, `session:${targetSid}`, `session:${targetSid}`, 'summary'),
+      )
+      rebuildSessionArtifacts()
+    } catch (error: unknown) {
+      if (loadToken !== artifactLoadGeneration) return
+      if (sessionId.value !== targetSid) return
+      restoredSessionFiles.value = []
+      setArtifactError(normalizeError(error))
+    }
+  }
 
   /**
    * Called by the consumer at each render-worthy point via `await commit()`.
@@ -267,6 +429,8 @@ export function useChat(
     if (isStreaming.value && sid === activeStreamSessionId) return
 
     const thisGen = ++loadGeneration
+    artifactLoadGeneration += 1
+    const artifactGen = artifactLoadGeneration
 
     try {
       const sessionNs = asRecord(asRecord(c).session)
@@ -288,11 +452,19 @@ export function useChat(
           ? (result.data as Array<Record<string, unknown>>)
           : []
       messages.value = raw.map(mapRemoteMessage)
+      turnArtifacts.value = {}
+      restoredSessionFiles.value = []
+      latestCompletedTurnId.value = null
+      sessionArtifacts.value = createEmptySessionArtifactSummary()
+      await loadSessionArtifacts(sid, artifactGen)
     } catch (error: unknown) {
       if (thisGen !== loadGeneration) return
       if (sessionId.value !== sid) return
       if (isStreaming.value && sid === activeStreamSessionId) return
       streamError.value = normalizeError(error)
+      turnArtifacts.value = {}
+      restoredSessionFiles.value = []
+      setArtifactError(normalizeError(error))
     }
   }
 
@@ -365,11 +537,12 @@ export function useChat(
       userParts.push({ id: nextId(), type: 'command', command: { name: input.commandRef.name, source: input.commandRef.source } })
     }
 
+    const turnId = nextId()
     const userMsg: RichMessage = {
-      id: nextId(), role: 'user', parts: userParts, createdAt: nowISO(), streaming: false,
+      id: nextId(), turnId, role: 'user', parts: userParts, createdAt: nowISO(), streaming: false,
     }
     const aiMsg: RichMessage = {
-      id: nextId(), role: 'assistant', parts: [], createdAt: nowISO(), streaming: true,
+      id: nextId(), turnId, role: 'assistant', parts: [], createdAt: nowISO(), streaming: true,
     }
 
     messages.value = [...messages.value, userMsg, aiMsg]
@@ -404,10 +577,52 @@ export function useChat(
     activeStreamSessionId = currentSid
     activeStreamClient = currentClient
     let promptAccepted = false
+    const artifactBaseline = await captureArtifactBaseline(currentClient)
+    const streamState: StreamState = createStreamState()
+    let finalizedArtifacts = false
+    let resolvedUserMessageId: string | null = null
+
+    const finalizeArtifacts = async () => {
+      if (finalizedArtifacts || !promptAccepted) return
+
+      try {
+        const attachmentFiles = extractAttachmentOutcomes(aiMsg.parts, turnId, aiMsg.id)
+        const liveFiles = turnArtifacts.value[turnId]?.files ?? []
+        const resolved = await resolveTurnArtifacts({
+          client: currentClient,
+          sessionId: currentSid,
+          turnId,
+          messageId: aiMsg.id,
+          userMessageId: streamState.latestUserMessageId ?? resolvedUserMessageId,
+          baseline: artifactBaseline,
+          liveFiles,
+          attachmentFiles,
+        })
+
+        if (resolved.files.length > 0) {
+          replaceTurnArtifacts(turnId, aiMsg.id, resolved.files, true)
+          setArtifactError(null)
+        } else if (liveFiles.length > 0) {
+          completeTurnArtifacts(turnId, aiMsg.id)
+          setArtifactError(null)
+        } else if (resolved.warnings.length > 0) {
+          setArtifactError(resolved.warnings.join(' | '))
+        } else {
+          setArtifactError(null)
+        }
+
+        if (resolved.warnings.length > 0 && resolved.files.length > 0) {
+          console.warn('[useChat] artifact fallbacks used:', resolved.warnings)
+        }
+        finalizedArtifacts = true
+      } catch (error) {
+        finalizedArtifacts = false
+        throw error
+      }
+    }
 
     try {
       const currentVariant = variant?.value ?? null
-      const streamState: StreamState = createStreamState()
 
       const eventNs = asRecord(currentClient.event)
       if (typeof eventNs.subscribe !== 'function') throw new Error('SDK client missing event.subscribe()')
@@ -463,6 +678,29 @@ export function useChat(
                 sessionStatus.value = mapped as SessionStatusType
               },
               onSessionUpdate,
+              (path, sid) => {
+                if (sid !== currentSid || !canCommitCurrentSession()) return
+                setArtifactError(null)
+                upsertTurnArtifact(turnId, aiMsg.id, createProcessingOutcome(path, turnId, aiMsg.id))
+              },
+              (sid, diff) => {
+                if (sid !== currentSid || !canCommitCurrentSession()) return
+                setArtifactError(null)
+                for (const item of diff) {
+                  upsertTurnArtifact(turnId, aiMsg.id, createOutcomeFromDiff(item, turnId, aiMsg.id, 'diff'))
+                }
+              },
+              (sid, assistantMessageId, tool) => {
+                if (sid !== currentSid || !canCommitCurrentSession()) return
+                for (const outcome of extractToolAttachmentOutcomes(tool, turnId, assistantMessageId)) {
+                  upsertTurnArtifact(turnId, assistantMessageId, outcome)
+                }
+              },
+              (sid, assistantMessageId) => {
+                if (sid !== currentSid || !canCommitCurrentSession()) return
+                if (!assistantMessageId) return
+                syncTurnMessageId(turnId, assistantMessageId)
+              },
             )
           } catch (error: unknown) {
             if (abortCtl.signal.aborted || isAbortError(error)) throw error
@@ -486,10 +724,7 @@ export function useChat(
 
       // Start consuming events
       const streamConsumer = consumeWithReconnect()
-      let streamFinished = false
-      const streamConsumerTask = streamConsumer.finally(() => {
-        streamFinished = true
-      })
+      const streamConsumerTask = streamConsumer
       // Attach a handler immediately to prevent transient unhandledrejection before awaited joins.
       void streamConsumerTask.catch(() => undefined)
 
@@ -545,7 +780,9 @@ export function useChat(
 
       await streamConsumerTask
 
-      await reconcileAssistantMessage(currentClient, currentSid, aiMsg)
+      resolvedUserMessageId = await reconcileAssistantMessage(currentClient, currentSid, aiMsg)
+      syncTurnMessageId(turnId, aiMsg.id)
+      await finalizeArtifacts()
 
       if (aiMsg.parts.length === 0) {
         aiMsg.parts = [{ id: nextId(), type: 'text', text: '(No response)' }]
@@ -553,12 +790,21 @@ export function useChat(
     } catch (error: unknown) {
       if (!cancelRequested && !isAbortError(error)) {
         if (promptAccepted) {
-          await reconcileAssistantMessage(currentClient, currentSid, aiMsg)
+          resolvedUserMessageId = await reconcileAssistantMessage(currentClient, currentSid, aiMsg)
+          syncTurnMessageId(turnId, aiMsg.id)
+          try {
+            await finalizeArtifacts()
+          } catch (artifactError: unknown) {
+            console.warn('[useChat] artifact finalize failed:', artifactError)
+          }
         }
         if (aiMsg.parts.length === 0 || aiMsg.parts.every((p) => p.type !== 'text' || !p.text?.trim())) {
           const msg = normalizeError(error)
           streamError.value = msg
           aiMsg.parts.push({ id: nextId(), type: 'text', text: msg })
+        }
+        if ((turnArtifacts.value[turnId]?.files.length ?? 0) > 0) {
+          setArtifactError(normalizeError(error))
         }
       }
     } finally {
@@ -604,9 +850,11 @@ export function useChat(
 
   watch(sessionId, (nextSid, prevSid) => {
     ++loadGeneration
+    artifactLoadGeneration += 1
     if (nextSid !== prevSid) {
       sessionStatus.value = null
       streamError.value = null
+      resetArtifactState()
     }
 
     if (!nextSid || nextSid.startsWith('local-')) {
@@ -615,6 +863,7 @@ export function useChat(
         void cancelStreamInternal(true)
       }
       messages.value = []
+      resetArtifactState()
       return
     }
 
@@ -639,15 +888,27 @@ export function useChat(
 
   watch(client, () => {
     ++loadGeneration
+    artifactLoadGeneration += 1
     if (!sessionId.value || sessionId.value.startsWith('local-')) {
       messages.value = []
+      resetArtifactState()
       return
     }
     if (isStreaming.value && sessionId.value === activeStreamSessionId) return
     void loadMessages(sessionId.value)
   })
 
-  return { messages, isStreaming, streamError, sessionStatus, send, cancelStream }
+  return {
+    messages,
+    isStreaming,
+    streamError,
+    sessionStatus,
+    turnArtifacts,
+    sessionArtifacts,
+    latestCompletedTurnId,
+    send,
+    cancelStream,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -657,6 +918,7 @@ export function useChat(
 function mapRemoteMessage(raw: Record<string, unknown>): RichMessage {
   const info = (raw.info ?? raw) as Record<string, unknown>
   const rawParts = (raw.parts ?? []) as Array<Record<string, unknown>>
+  const id = String(info.id ?? nextId())
 
   const role = String(info.role ?? 'assistant')
   const time = asRecord(info.time)
@@ -737,7 +999,8 @@ function mapRemoteMessage(raw: Record<string, unknown>): RichMessage {
   }
 
   return {
-    id: String(info.id ?? nextId()),
+    id,
+    turnId: id,
     role: role === 'user' ? 'user' : 'assistant',
     parts,
     modelInfo: providerID && modelID ? { providerID, modelID } : undefined,

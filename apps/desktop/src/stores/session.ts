@@ -31,6 +31,7 @@ export interface ToolCallState {
   output?: string
   status: ToolStatus
   title?: string
+  attachments?: FileInfo[]
 }
 
 export interface TokenInfo {
@@ -44,6 +45,8 @@ export interface FileInfo {
   mime: string
   url: string
   filename?: string
+  path?: string
+  binary?: boolean
 }
 
 export interface MessagePart {
@@ -102,6 +105,7 @@ export type MessageRole = 'user' | 'assistant'
 
 export interface RichMessage {
   id: string
+  turnId: string
   role: MessageRole
   parts: MessagePart[]
   modelInfo?: { providerID: string; modelID: string }

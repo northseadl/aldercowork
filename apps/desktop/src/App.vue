@@ -12,9 +12,9 @@ import { useI18n } from './i18n'
 import { createKernel, KERNEL_KEY } from './composables/useKernel'
 import { useKeyboard, useToast, installCopyDelegate } from './composables'
 import { useAppStore } from './stores/app'
+import { useInstalledSkillStore } from './stores/installedSkill'
 import { useSessionStore } from './stores/session'
 import { useSettingsStore } from './stores/settings'
-import { useSkillStore } from './stores/skill'
 import { useWorkspaceStore } from './stores/workspace'
 
 import type { AppNavId, BreadcrumbItem, RuntimeErrorDetail, SidebarNavItem } from './types'
@@ -40,7 +40,7 @@ const route = useRoute()
 const appStore = useAppStore()
 const sessionStore = useSessionStore()
 const settingsStore = useSettingsStore()
-const skillStore = useSkillStore()
+const installedSkillStore = useInstalledSkillStore()
 const workspaceStore = useWorkspaceStore()
 const toast = useToast()
 const fatalRuntimeError = ref<RuntimeErrorDetail | null>(null)
@@ -49,7 +49,7 @@ let uninstallCopyDelegate: (() => void) | null = null
 
 const { activeNav } = storeToRefs(appStore)
 const { activeSession, activeSessionId } = storeToRefs(sessionStore)
-const { skillCount } = storeToRefs(skillStore)
+const { skillCount } = storeToRefs(installedSkillStore)
 const { configured, loaded: settingsLoaded } = storeToRefs(settingsStore)
 
 // Map session store → sidebar display format

@@ -58,20 +58,7 @@ jobs:
       - name: Sync version from tag
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "Syncing version: $VERSION"
-          # tauri.conf.json
-          cd apps/desktop/src-tauri
-          sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" tauri.conf.json && rm -f tauri.conf.json.bak
-          # Cargo.toml — awk for cross-platform (BSD sed lacks 0, address)
-          awk -v ver="$VERSION" '/^version = / && !done { sub(/version = "[^"]*"/, "version = \"" ver "\""); done=1 } {print}' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
-          cd ..
-          # package.json
-          sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json && rm -f package.json.bak
-          echo "✓ Version synced to $VERSION"
-          grep '"version"' src-tauri/tauri.conf.json
-          head -3 src-tauri/Cargo.toml
-          grep '"version"' package.json
+          bash scripts/sync-version-from-tag.sh "${GITHUB_REF_NAME}"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable

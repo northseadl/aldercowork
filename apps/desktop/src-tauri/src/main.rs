@@ -46,6 +46,8 @@ pub struct DataPaths {
     pub logs: String,
     pub kernels: String,
     pub skills: String,
+    pub skill_staging: String,
+    pub skill_audit_reports: String,
     pub kernel_state: String,
     pub workspace: String,
 }
@@ -78,6 +80,8 @@ pub fn resolve_data_paths(app: &tauri::AppHandle) -> DataPaths {
         logs: to_string(app_log),
         kernels: to_string(app_data.join("kernels")),
         skills: to_string(app_data.join("skills")),
+        skill_staging: to_string(app_data.join("skill-staging")),
+        skill_audit_reports: to_string(app_data.join("audit-reports")),
         kernel_state: to_string(app_data.join("kernel-state")),
         workspace: to_string(app_data.join("workspace")),
     }
@@ -262,7 +266,7 @@ async fn start_kernel_runtime(
 ) -> Result<kernel::KernelInfo, String> {
     let info = {
         let mut mgr = state.lock().await;
-        mgr.spawn_process(app, extra_env)?
+        mgr.spawn_process(app, extra_env, state.clone())?
     };
 
     if info.status == "running" {
@@ -510,6 +514,8 @@ fn main() {
                 &data_paths.logs,
                 &data_paths.kernels,
                 &data_paths.skills,
+                &data_paths.skill_staging,
+                &data_paths.skill_audit_reports,
                 &data_paths.kernel_state,
                 &data_paths.workspace,
             ];
@@ -678,6 +684,17 @@ fn main() {
             skill::read_skill_file,
             skill::remove_skill,
             skill::select_skill_archive,
+            skill::search_marketplace_skills,
+            skill::get_marketplace_skill,
+            skill::download_marketplace_skill,
+            skill::stage_skill_package,
+            skill::audit_staged_skill,
+            skill::get_skill_audit_report,
+            skill::approve_staged_skill_install,
+            skill::dismiss_staged_skill,
+            skill::list_installed_skills_with_state,
+            skill::check_skill_updates,
+            skill::update_skill,
             skill::import_skill_archive,
             skill::import_skill_git,
             skill::activate_skill,

@@ -1,166 +1,199 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import type { SkillManifest } from '@aldercowork/skill-schema'
-
-import { useI18n } from '../../i18n'
 import { useMarkdown } from '../../composables/useMarkdown'
 import { AppButton } from '../ui'
 import PermissionBadge from './PermissionBadge.vue'
-
-import type { NormalizedSkillPermission, SkillActivation, SkillActivationScope, SkillPanelSkill } from './types'
-
-type SkillDetailModel = SkillManifest & Partial<Pick<SkillPanelSkill, 'name' | 'description' | 'preview' | 'activation'>>
+import SkillAuditBadge from './SkillAuditBadge.vue'
+import { normalizePermissions, type SkillActivationScope, type SkillDetailSelection } from './types'
 
 const props = defineProps<{
-  skill: SkillDetailModel
-  activating?: boolean
+  selection: SkillDetailSelection
+  actionBusy?: boolean
+  auditBusy?: boolean
+  installBusy?: boolean
 }>()
 
 const emit = defineEmits<{
-  inspect: []
-  remove: []
   activate: [scope: SkillActivationScope]
   deactivate: [scope: SkillActivationScope]
+  remove: []
+  stageMarketplace: []
+  updateMarketplace: []
+  runAudit: []
+  installStaged: []
+  dismissStaged: []
+  viewReport: []
 }>()
-const { t } = useI18n()
-const { render: renderMarkdown } = useMarkdown()
 
-const displayName = computed(() => {
-  return props.skill.name?.trim() || props.skill.id
-})
+const { render } = useMarkdown()
 
-const descriptionPreview = computed(() => {
-  if (props.skill.preview?.trim()) return props.skill.preview
-  if (props.skill.description?.trim()) return props.skill.description
-  return t('skills.detail.noPreview')
-})
-
-const renderedPreview = computed(() => renderMarkdown(descriptionPreview.value))
-
-const activation = computed<SkillActivation>(() => {
-  return props.skill.activation ?? { global: false, workspace: false }
-})
-
-const permissions = computed<NormalizedSkillPermission[]>(() => {
-  const p = props.skill.permissions
-  if (!p) return []
-
-  const result: NormalizedSkillPermission[] = []
-  if (p.fs) {
-    Object.entries(p.fs).forEach(([key, value]) => {
-      result.push({ key, type: 'fs', value: value ?? 'default' })
-    })
+const runtime = computed(() => props.selection.skill)
+const renderedPreview = computed(() =>
+  render(('preview' in runtime.value ? runtime.value.preview : '') || runtime.value.summary || ''),
+)
+const permissions = computed(() => normalizePermissions(runtime.value))
+const triggers = computed(() => runtime.value.triggers?.keywords ?? [])
+const marketRisk = computed<'info' | 'low' | 'medium' | 'high' | 'critical'>(() => {
+  if (props.selection.kind !== 'marketplace') return 'low'
+  if (props.selection.skill.permissions.shell === 'full') return 'high'
+  if (
+    props.selection.skill.permissions.shell === 'restricted'
+    || (props.selection.skill.permissions.fs ?? []).includes('write')
+  ) {
+    return 'medium'
   }
-  if (p.network) {
-    Object.entries(p.network).forEach(([key, value]) => {
-      result.push({ key, type: 'network', value: value ?? 'default' })
-    })
-  }
-  if (p.shell) {
-    Object.entries(p.shell).forEach(([key, value]) => {
-      result.push({ key, type: 'shell', value: value ?? 'default' })
-    })
-  }
-  return result
+  if ((props.selection.skill.permissions.network ?? []).length) return 'info'
+  return 'low'
 })
-
-const triggerTags = computed(() => props.skill.triggers?.keywords ?? [])
-
-function toggleScope(scope: SkillActivationScope) {
-  const isActive = scope === 'global' ? activation.value.global : activation.value.workspace
-  if (isActive) {
-    emit('deactivate', scope)
-  } else {
-    emit('activate', scope)
-  }
-}
+const auditBadge = computed(() => {
+  if (props.selection.kind === 'staged') return props.selection.skill.audit ?? null
+  if (props.selection.kind === 'installed') return props.selection.skill.audit ?? null
+  return null
+})
+const showUpdateAction = computed(
+  () => props.selection.kind === 'installed' && props.selection.skill.update?.available,
+)
 </script>
 
 <template>
   <article class="skill-detail">
     <header class="skill-detail__header">
-      <span class="skill-detail__icon" aria-hidden="true">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-        </svg>
-      </span>
+      <div class="skill-detail__title-block">
+        <p class="skill-detail__eyebrow">{{ selection.kind }}</p>
+        <h2 class="skill-detail__title">{{ selection.skill.displayName }}</h2>
+        <p class="skill-detail__version">
+          {{ selection.skill.publisher }} · v{{ selection.skill.version }}
+        </p>
+      </div>
 
-      <div class="skill-detail__title-group">
-        <h2 class="skill-detail__title">{{ displayName }}</h2>
-        <span class="skill-detail__version">{{ skill.publisher }} · v{{ skill.version }}</span>
+      <div class="skill-detail__badges">
+        <SkillAuditBadge
+          v-if="selection.kind === 'marketplace'"
+          :severity="marketRisk"
+        />
+        <SkillAuditBadge
+          v-else-if="auditBadge"
+          :severity="auditBadge.severity"
+          :status="auditBadge.status"
+        />
       </div>
     </header>
 
-    <!-- Activation scope toggles -->
-    <section class="skill-detail__activation">
+    <section v-if="selection.kind === 'installed'" class="skill-detail__activation">
       <button
         class="scope-toggle"
-        :class="{ 'is-active': activation.global }"
-        :disabled="activating"
-        @click="toggleScope('global')"
+        :class="{ 'is-active': selection.skill.activation.global }"
+        :disabled="actionBusy"
+        @click="selection.skill.activation.global ? emit('deactivate', 'global') : emit('activate', 'global')"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <line x1="2" y1="12" x2="22" y2="12" />
-          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-        </svg>
-        {{ t('skills.activation.global') }}
+        Global
       </button>
-
       <button
-        class="scope-toggle scope-toggle--workspace"
-        :class="{ 'is-active': activation.workspace }"
-        :disabled="activating"
-        @click="toggleScope('workspace')"
+        class="scope-toggle"
+        :class="{ 'is-active': selection.skill.activation.workspace }"
+        :disabled="actionBusy"
+        @click="selection.skill.activation.workspace ? emit('deactivate', 'workspace') : emit('activate', 'workspace')"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-        {{ t('skills.activation.workspace') }}
+        Workspace
       </button>
     </section>
 
-    <section class="skill-detail__section skill-detail__description-section">
-      <h3 class="skill-detail__section-title">{{ t('skills.detail.sectionDescription') }}</h3>
-      <div class="skill-detail__description markdown-body" v-html="renderedPreview" />
+    <section class="skill-detail__section">
+      <h3 class="skill-detail__section-title">Summary</h3>
+      <div class="skill-detail__summary markdown-body" v-html="renderedPreview" />
     </section>
 
     <section v-if="permissions.length" class="skill-detail__section">
-      <h3 class="skill-detail__section-title">{{ t('skills.detail.sectionPermissions') }}</h3>
-      <div class="skill-detail__permissions">
+      <h3 class="skill-detail__section-title">Permissions</h3>
+      <div class="skill-detail__token-list">
         <PermissionBadge
-          v-for="perm in permissions"
-          :key="perm.key"
-          :name="perm.key"
-          :type="perm.type"
-          :value="perm.value"
+          v-for="permission in permissions"
+          :key="permission.key"
+          :type="permission.type"
+          :value="permission.value"
         />
       </div>
     </section>
 
-    <section v-if="triggerTags.length" class="skill-detail__section">
-      <h3 class="skill-detail__section-title">{{ t('skills.detail.sectionTriggers') }}</h3>
-      <div class="skill-detail__trigger-cloud">
-        <span v-for="tag in triggerTags" :key="tag" class="skill-detail__trigger-tag">{{ tag }}</span>
+    <section v-if="triggers.length" class="skill-detail__section">
+      <h3 class="skill-detail__section-title">Triggers</h3>
+      <div class="skill-detail__token-list">
+        <span v-for="trigger in triggers" :key="trigger" class="skill-detail__trigger">{{ trigger }}</span>
       </div>
     </section>
 
+    <section v-if="'releaseNotes' in selection.skill && selection.skill.releaseNotes" class="skill-detail__section">
+      <h3 class="skill-detail__section-title">Release Notes</h3>
+      <p class="skill-detail__plain">{{ selection.skill.releaseNotes }}</p>
+    </section>
+
+    <section v-if="auditBadge" class="skill-detail__section">
+      <h3 class="skill-detail__section-title">Audit</h3>
+      <p class="skill-detail__plain">{{ auditBadge.summary }}</p>
+    </section>
+
     <footer class="skill-detail__actions">
-      <AppButton variant="subtle" @click="emit('inspect')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        {{ t('skills.detail.inspectAction') }}
+      <AppButton
+        v-if="selection.kind === 'marketplace'"
+        variant="brand"
+        :disabled="actionBusy"
+        @click="emit('stageMarketplace')"
+      >
+        Install via Audit
       </AppButton>
-      <AppButton variant="ghost" @click="emit('remove')">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="3 6 5 6 21 6" />
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-        </svg>
-        {{ t('skills.detail.removeAction') }}
+
+      <AppButton
+        v-if="showUpdateAction"
+        variant="brand"
+        :disabled="actionBusy"
+        @click="emit('updateMarketplace')"
+      >
+        Stage Update
+      </AppButton>
+
+      <AppButton
+        v-if="selection.kind === 'staged'"
+        variant="brand"
+        :disabled="auditBusy"
+        @click="emit('runAudit')"
+      >
+        {{ selection.skill.audit ? 'Re-run Audit' : 'Run Audit' }}
+      </AppButton>
+
+      <AppButton
+        v-if="selection.kind === 'staged'"
+        variant="subtle"
+        :disabled="installBusy || !selection.skill.audit?.installAllowed"
+        @click="emit('installStaged')"
+      >
+        Install
+      </AppButton>
+
+      <AppButton
+        v-if="selection.kind === 'staged'"
+        variant="ghost"
+        :disabled="actionBusy"
+        @click="emit('dismissStaged')"
+      >
+        Dismiss
+      </AppButton>
+
+      <AppButton
+        v-if="selection.kind !== 'marketplace' && auditBadge"
+        variant="subtle"
+        @click="emit('viewReport')"
+      >
+        View Report
+      </AppButton>
+
+      <AppButton
+        v-if="selection.kind === 'installed'"
+        variant="ghost"
+        :disabled="actionBusy"
+        @click="emit('remove')"
+      >
+        Remove
       </AppButton>
     </footer>
   </article>
@@ -173,50 +206,42 @@ function toggleScope(scope: SkillActivationScope) {
   border-radius: var(--r-xl);
   background: var(--content-warm);
   padding: calc(var(--sp) * 2.5);
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--sp) * 2);
+  display: grid;
+  gap: calc(var(--sp) * 1.5);
+  align-content: start;
 }
 
 .skill-detail__header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: calc(var(--sp) * 1.5);
-  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: calc(var(--sp) * 2);
 }
 
-.skill-detail__icon {
-  width: 46px;
-  height: 46px;
-  border-radius: var(--r-lg);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: color-mix(in srgb, var(--brand) 12%, transparent);
-  color: var(--brand);
+.skill-detail__title-block {
+  display: grid;
+  gap: 4px;
 }
 
-.skill-detail__title-group {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
+.skill-detail__eyebrow {
+  margin: 0;
+  color: var(--text-3);
+  text-transform: uppercase;
+  font: var(--fw-semibold) var(--text-micro) / 1 var(--font-mono);
+  letter-spacing: .04em;
 }
 
 .skill-detail__title {
   margin: 0;
-  font: var(--fw-semibold) var(--text-large) / var(--lh-tight) var(--font-mono);
+  font: var(--fw-semibold) 1.3rem / var(--lh-tight) var(--font-mono);
   color: var(--text-1);
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .skill-detail__version {
+  margin: 0;
   color: var(--text-3);
   font-size: var(--text-small);
 }
 
-/* Activation scope toggles */
 .skill-detail__activation {
   display: flex;
   gap: calc(var(--sp) * 1);
@@ -224,55 +249,23 @@ function toggleScope(scope: SkillActivationScope) {
 
 .scope-toggle {
   flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: calc(var(--sp) * 1) calc(var(--sp) * 1.5);
-  border: 1px solid var(--border);
+  min-height: 38px;
   border-radius: var(--r-md);
+  border: 1px solid var(--border);
   background: transparent;
   color: var(--text-3);
   font: var(--fw-medium) var(--text-small) / 1 var(--font-mono);
-  cursor: pointer;
-  transition:
-    background var(--speed-regular) var(--ease),
-    border-color var(--speed-regular) var(--ease),
-    color var(--speed-regular) var(--ease);
-}
-
-.scope-toggle:hover:not(:disabled) {
-  background: var(--surface-hover);
-  border-color: var(--text-3);
-  color: var(--text-1);
-}
-
-.scope-toggle:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .scope-toggle.is-active {
-  background: color-mix(in srgb, var(--syntax-function) 12%, transparent);
-  border-color: var(--syntax-function);
-  color: var(--syntax-function);
-}
-
-.scope-toggle--workspace.is-active {
-  background: color-mix(in srgb, var(--brand) 12%, transparent);
   border-color: var(--brand);
+  background: var(--brand-subtle);
   color: var(--brand);
 }
 
 .skill-detail__section {
   display: grid;
   gap: calc(var(--sp) * 0.75);
-}
-
-.skill-detail__description-section {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .skill-detail__section-title {
@@ -283,73 +276,46 @@ function toggleScope(scope: SkillActivationScope) {
   text-transform: uppercase;
 }
 
-.skill-detail__description {
-  margin: 0;
+.skill-detail__summary {
+  font-size: var(--text-small);
   color: var(--text-1);
   line-height: var(--lh-normal);
-  font-size: var(--text-small);
-  word-break: break-word;
-  overflow-y: auto;
+  max-height: 240px;
+  overflow: auto;
 }
 
-.skill-detail__description :deep(h1),
-.skill-detail__description :deep(h2),
-.skill-detail__description :deep(h3) {
-  margin-top: 0.5em;
-  margin-bottom: 0.25em;
-  font-size: 1em;
-  font-weight: var(--fw-semibold);
+.skill-detail__summary :deep(p) {
+  margin: 0.4em 0;
 }
 
-.skill-detail__description :deep(p) {
-  margin: 0.25em 0;
-}
-
-.skill-detail__description :deep(ul),
-.skill-detail__description :deep(ol) {
+.skill-detail__summary :deep(ul) {
   padding-left: 1.25em;
-  margin: 0.25em 0;
 }
 
-.skill-detail__description :deep(code) {
-  font-size: 0.9em;
-  padding: 1px 4px;
-  border-radius: var(--r-sm);
-  background: var(--surface-active);
-}
-
-.skill-detail__permissions {
+.skill-detail__token-list {
   display: flex;
   flex-wrap: wrap;
-  gap: calc(var(--sp) * 1);
+  gap: calc(var(--sp) * 0.75);
 }
 
-.skill-detail__trigger-cloud {
-  display: flex;
-  flex-wrap: wrap;
-  gap: calc(var(--sp) * 1);
-}
-
-.skill-detail__trigger-tag {
+.skill-detail__trigger {
   border-radius: var(--r-full);
-  border: 1px solid var(--border);
+  padding: 4px 10px;
   background: var(--surface-active);
   color: var(--text-2);
   font: var(--fw-medium) var(--text-micro) / 1 var(--font-mono);
-  padding: 4px 9px;
+}
+
+.skill-detail__plain {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-small);
+  line-height: var(--lh-normal);
 }
 
 .skill-detail__actions {
-  margin-top: auto;
-  padding-top: calc(var(--sp) * 1.5);
-  border-top: 1px solid var(--border);
   display: flex;
-  gap: calc(var(--sp) * 1);
-}
-
-.skill-detail__actions :deep(button) {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: calc(var(--sp) * 0.75);
 }
 </style>

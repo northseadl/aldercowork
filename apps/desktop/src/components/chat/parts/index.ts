@@ -1,4 +1,6 @@
+export { default as DiffPreview } from './DiffPreview.vue'
 export { default as FileAttachment } from './FileAttachment.vue'
+export { default as FileOutcomeCard } from './FileOutcomeCard.vue'
 export { default as PatchDiff } from './PatchDiff.vue'
 export { default as ReasoningBlock } from './ReasoningBlock.vue'
 export { default as RetryNotice } from './RetryNotice.vue'

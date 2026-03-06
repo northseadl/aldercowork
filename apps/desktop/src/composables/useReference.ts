@@ -51,7 +51,8 @@ function mimeFromPath(path: string): string {
 
 /** Extract filename from path */
 function basename(path: string): string {
-    return path.split('/').pop() ?? path
+    const normalized = path.replace(/\\/g, '/')
+    return normalized.split('/').pop() ?? normalized
 }
 
 /** Safe record accessor */
@@ -207,9 +208,10 @@ export function useReference(client: Ref<unknown>) {
                     const range = asRecord(loc.range)
                     const rStart = asRecord(range.start)
                     const rEnd = asRecord(range.end)
-                    if (!name) continue
+                    if (!name || !uri) continue
 
                     const path = uri.replace(/^file:\/\//, '')
+                    if (!path) continue
                     const kindLabel = SYMBOL_KIND_LABELS[kind] ?? 'Symbol'
                     results.push({
                         category: 'symbol',

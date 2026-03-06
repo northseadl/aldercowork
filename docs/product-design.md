@@ -118,7 +118,7 @@ my-skill/
 
 | 路径 | 页面 | 状态 |
 |------|------|------|
-| `/` | ChatView — 对话界面 | ✅ Part-centric 渲染，12 种 Part type |
+| `/` | ChatView — 对话界面 | ✅ Part-centric 渲染，12 种 Part type + 文件成果带 / 会话收集区 |
 | `/skills` | SkillsView — 技能管理 | ✅ 列表 + 详情 + 导入 + 激活 |
 | `/runbooks` | RunbooksView | 🔲 占位 |
 | `/settings` | SettingsView — 配置 | ✅ Provider / Engine / Theme / Shortcuts |
@@ -127,6 +127,7 @@ my-skill/
 
 - **SSE 流式渲染**：`event.subscribe` → `promptAsync` → Part-centric 增量更新
 - **Part 类型支持**：text / reasoning / file / tool / step / patch / agent / retry / compaction / subtask
+- **文件成果可视化**：`file.edited` live 占位 + `session.diff` 回填，Assistant 消息尾部展示本轮 `Artifact Band`，线程底部展示会话级 `Artifact Shelf`
 - **流式 Markdown**：morphdom 增量 DOM patch（StreamingMarkdown 组件）
 - **权限系统**：`permission.reply` 回传 once / always / reject
 

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import type { Runbook } from './types'
 
 const props = defineProps<{
@@ -34,7 +36,7 @@ function todoStats(content: string): { done: number; total: number } | null {
   return total > 0 ? { done: checked, total } : null
 }
 
-const stats = todoStats(props.runbook.content)
+const stats = computed(() => todoStats(props.runbook.content))
 </script>
 
 <template>

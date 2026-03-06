@@ -4,8 +4,10 @@
  *
  * Pure logic — no Vue dependency. Receives callbacks for side effects.
  */
-import type { RichMessage, TokenInfo, PartType } from '../../stores/session'
+import type { RichMessage, TokenInfo, PartType, ToolCallState } from '../../stores/session'
+import type { FileDiffRecord } from '../../types/artifacts'
 import type { PermissionResolver, StreamState } from './types'
+import { parseFileDiffRecord } from './artifact-tracker'
 import { asRecord, asString, normalizeEventType, parseTimestamp } from './helpers'
 import { accumulateTokens, findOrCreatePart, parseToolFromPart } from './parts'
 import { parsePermissionRequest, resolvePermissionDecision } from './permissions'
@@ -61,6 +63,10 @@ export async function consumeEventStream(
     permissionResolver?: PermissionResolver,
     onSessionStatus?: (status: string) => void,
     onSessionUpdate?: (sessionId: string, title: string) => void,
+    onFileEdited?: (path: string, sessionId: string) => void,
+    onSessionDiff?: (sessionId: string, diff: FileDiffRecord[]) => void,
+    onToolUpdated?: (sessionId: string, assistantMessageId: string, tool: ToolCallState) => void,
+    onTurnCompleted?: (sessionId: string, assistantMessageId: string) => void,
 ): Promise<string | null> {
 
     for await (const payload of stream) {
@@ -91,6 +97,29 @@ export async function consumeEventStream(
             throw new Error(extractSessionError(props))
         }
 
+        if (type === 'file.edited') {
+            const file = asString(props.file)
+            if (!file) continue
+            state.sawActivity = true
+            onFileEdited?.(file, sessionId)
+            await commit()
+            continue
+        }
+
+        if (type === 'session.diff') {
+            const diff = Array.isArray(props.diff)
+                ? props.diff
+                    .map(parseFileDiffRecord)
+                    .filter((item): item is FileDiffRecord => item !== null)
+                : []
+            if (diff.length > 0) {
+                state.sawActivity = true
+                onSessionDiff?.(sessionId, diff)
+                await commit()
+            }
+            continue
+        }
+
         // --- Message-level events ---
         if (type === 'message.created' || type === 'message.start' || type === 'message.updated') {
             const msgObj = asRecord(asRecord(props.message).info)
@@ -99,7 +128,10 @@ export async function consumeEventStream(
 
             // Track non-assistant messages so we can skip their parts later
             if (asString(info.role) !== 'assistant') {
-                if (msgId) state.skippedMessageIds.add(msgId)
+                if (msgId) {
+                    state.skippedMessageIds.add(msgId)
+                    state.latestUserMessageId = msgId
+                }
                 continue
             }
 
@@ -195,6 +227,10 @@ export async function consumeEventStream(
                 const tool = parseToolFromPart(part, { fallbackId: partId, previous: p.tool })
                 if (!tool) continue
                 p.tool = tool
+                const assistantMessageId = partMsgId ?? state.assistantMessageId ?? aiMsg.id
+                if (assistantMessageId) {
+                    onToolUpdated?.(sessionId, assistantMessageId, tool)
+                }
                 state.sawActivity = true
                 await commit()
                 continue
@@ -356,7 +392,11 @@ export async function consumeEventStream(
         if (type === 'session.status') {
             const statusType = asString(asRecord(props.status).type) ?? asString(props.status)
             if (statusType === 'idle' && state.completionArmed) {
+                state.completionArmed = false
                 onSessionStatus?.('idle')
+                if (state.assistantMessageId) {
+                    onTurnCompleted?.(sessionId, state.assistantMessageId)
+                }
                 return state.assistantMessageId
             }
             if (statusType) {
@@ -366,6 +406,11 @@ export async function consumeEventStream(
         }
 
         if (type === 'session.idle' && state.completionArmed) {
+            state.completionArmed = false
+            onSessionStatus?.('idle')
+            if (state.assistantMessageId) {
+                onTurnCompleted?.(sessionId, state.assistantMessageId)
+            }
             return state.assistantMessageId
         }
     }

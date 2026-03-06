@@ -9,6 +9,12 @@
 #   4. Run TypeScript type check
 #
 # Install: git config core.hooksPath .githooks
+#
+# Env:
+#   ALLOW_DIRECT_COMMIT=1  — allow direct commit to main/develop (emergency only)
+#   SKIP_SECRET_SCAN=1     — skip secret scan
+#   SKIP_RUST_CHECK=1      — skip cargo check
+#   SKIP_TS_CHECK=1        — skip TypeScript/Vue type check
 # =============================================================================
 set -euo pipefail
 
@@ -21,6 +27,9 @@ RESET='\033[0m'
 info()  { echo -e "${GREEN}[pre-commit]${RESET} $*"; }
 warn()  { echo -e "${YELLOW}[pre-commit]${RESET} $*"; }
 fail()  { echo -e "${RED}[pre-commit]${RESET} $*"; exit 1; }
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
 
 # ---------------------------------------------------------------------------
 # 1. Branch protection — block direct commits to main and develop
@@ -44,9 +53,14 @@ fi
 # ---------------------------------------------------------------------------
 # 2. Secret leak detection — scan staged files for common patterns
 # ---------------------------------------------------------------------------
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)
+STAGED_FILES=()
+while IFS= read -r -d '' file; do
+  STAGED_FILES+=("$file")
+done < <(git diff --cached --name-only -z --diff-filter=ACM 2>/dev/null || true)
 
-if [ -n "$STAGED_FILES" ]; then
+if [ "${SKIP_SECRET_SCAN:-}" = "1" ]; then
+  warn "SKIP_SECRET_SCAN=1 — 跳过密钥扫描"
+elif [ "${#STAGED_FILES[@]}" -gt 0 ]; then
   # Patterns that indicate leaked secrets (case-insensitive)
   SECRET_PATTERNS=(
     'sk-[a-zA-Z0-9]{20,}'           # OpenAI API key
@@ -61,14 +75,24 @@ if [ -n "$STAGED_FILES" ]; then
   )
 
   for pattern in "${SECRET_PATTERNS[@]}"; do
-    # Only scan text files, skip lock files and binaries
-    MATCHES=$(echo "$STAGED_FILES" \
-      | grep -v '\.lock$\|pnpm-lock\|Cargo\.lock\|\.png$\|\.ico$\|\.icns$\|^\.githooks/\|^\.github/' \
-      | xargs grep -lEn "$pattern" 2>/dev/null || true)
+    MATCHES=()
 
-    if [ -n "$MATCHES" ]; then
+    for file in "${STAGED_FILES[@]}"; do
+      case "$file" in
+        *.lock|pnpm-lock.yaml|Cargo.lock|*.png|*.ico|*.icns) continue ;;
+      esac
+
+      # Scan staged content (index) instead of working tree.
+      if git show ":$file" 2>/dev/null | grep -qiE "$pattern"; then
+        MATCHES+=("$file")
+      fi
+    done
+
+    if [ "${#MATCHES[@]}" -gt 0 ]; then
+      MATCH_LIST=$(printf '  - %s\n' "${MATCHES[@]}")
       fail "检测到疑似密钥泄漏！匹配模式: ${BOLD}$pattern${RESET}
-文件: $MATCHES
+文件:
+$MATCH_LIST
 请检查并移除敏感信息后再提交。如果是误报，使用 ${BOLD}git commit --no-verify${RESET} 绕过。"
     fi
   done
@@ -77,9 +101,18 @@ fi
 # ---------------------------------------------------------------------------
 # 3. Rust cargo check (only if Rust files changed)
 # ---------------------------------------------------------------------------
-RUST_CHANGED=$(echo "$STAGED_FILES" | grep -E '\.(rs|toml)$' || true)
+RUST_CHANGED=""
+if [ "${#STAGED_FILES[@]}" -gt 0 ]; then
+  for file in "${STAGED_FILES[@]}"; do
+    case "$file" in
+      *.rs|*.toml) RUST_CHANGED="1" ;;
+    esac
+  done
+fi
 
-if [ -n "$RUST_CHANGED" ]; then
+if [ "${SKIP_RUST_CHECK:-}" = "1" ]; then
+  warn "SKIP_RUST_CHECK=1 — 跳过 cargo check"
+elif [ -n "$RUST_CHANGED" ]; then
   info "Rust 文件变更，执行 cargo check..."
   if ! (cd apps/desktop/src-tauri && cargo check 2>&1); then
     fail "cargo check 失败，请修复编译错误后再提交。"
@@ -90,11 +123,26 @@ fi
 # ---------------------------------------------------------------------------
 # 4. TypeScript type check (only if TS/Vue files changed)
 # ---------------------------------------------------------------------------
-TS_CHANGED=$(echo "$STAGED_FILES" | grep -E '\.(ts|vue)$' || true)
+TS_CHANGED=""
+if [ "${#STAGED_FILES[@]}" -gt 0 ]; then
+  for file in "${STAGED_FILES[@]}"; do
+    case "$file" in
+      *.ts|*.vue) TS_CHANGED="1" ;;
+    esac
+  done
+fi
 
-if [ -n "$TS_CHANGED" ]; then
+if [ "${SKIP_TS_CHECK:-}" = "1" ]; then
+  warn "SKIP_TS_CHECK=1 — 跳过 TypeScript 类型检查"
+elif [ -n "$TS_CHANGED" ]; then
   info "TypeScript/Vue 文件变更，执行 vue-tsc..."
-  if ! (cd apps/desktop && npx vue-tsc --noEmit 2>&1); then
+  if command -v pnpm >/dev/null 2>&1; then
+    TS_CMD='pnpm exec vue-tsc --noEmit'
+  else
+    TS_CMD='npx vue-tsc --noEmit'
+  fi
+
+  if ! (cd apps/desktop && bash -lc "$TS_CMD" 2>&1); then
     fail "TypeScript 类型检查失败，请修复类型错误后再提交。"
   fi
   info "vue-tsc ✓"

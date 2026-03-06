@@ -1,157 +1,97 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import type { SkillManifest } from '@aldercowork/skill-schema'
+import type { SkillAuditReport } from '@aldercowork/skill-schema'
 
 import { useDialogA11y } from '../../composables/useDialogA11y'
-import { useI18n } from '../../i18n'
 import { AppButton } from '../ui'
-import PermissionBadge from './PermissionBadge.vue'
+import SkillAuditBadge from './SkillAuditBadge.vue'
 
-import type { NormalizedSkillPermission } from './types'
-
-interface Props {
-  skill: SkillManifest
-  toolsToCall: string[]
+const props = defineProps<{
   visible: boolean
-}
-
-const props = defineProps<Props>()
+  report: SkillAuditReport | null
+}>()
 
 const emit = defineEmits<{
-  confirm: []
-  cancel: []
+  close: []
 }>()
-const { t } = useI18n()
+
 const dialogRef = ref<HTMLElement | null>(null)
 
-const permissions = computed<NormalizedSkillPermission[]>(() => {
-  const normalized: NormalizedSkillPermission[] = []
-
-  for (const fsPermission of props.skill.permissions.fs ?? []) {
-    normalized.push({
-      key: `fs-${fsPermission}`,
-      type: 'fs',
-      value: fsPermission,
-    })
-  }
-
-  if (props.skill.permissions.shell) {
-    normalized.push({
-      key: `shell-${props.skill.permissions.shell}`,
-      type: 'shell',
-      value: props.skill.permissions.shell,
-    })
-  }
-
-  for (const networkPermission of props.skill.permissions.network ?? []) {
-    normalized.push({
-      key: `network-${networkPermission}`,
-      type: 'network',
-      value: networkPermission,
-    })
-  }
-
-  return normalized
-})
-
-const riskMeta = computed(() => {
-  const hasShellFull = props.skill.permissions.shell === 'full'
-  const hasShellRestricted = props.skill.permissions.shell === 'restricted'
-  const hasFsWrite = (props.skill.permissions.fs ?? []).includes('write')
-  const hasNetwork = (props.skill.permissions.network ?? []).length > 0
-
-  if (hasShellFull) {
-    return {
-      label: t('skills.overlay.risk.high'),
-      className: 'risk-high',
-      hint: t('skills.overlay.risk.highHint'),
-    }
-  }
-
-  if (hasFsWrite || hasShellRestricted) {
-    return {
-      label: t('skills.overlay.risk.medium'),
-      className: 'risk-medium',
-      hint: t('skills.overlay.risk.mediumHint'),
-    }
-  }
-
-  if (hasNetwork) {
-    return {
-      label: t('skills.overlay.risk.info'),
-      className: 'risk-info',
-      hint: t('skills.overlay.risk.infoHint'),
-    }
-  }
-
-  return {
-    label: t('skills.overlay.risk.low'),
-    className: 'risk-low',
-    hint: t('skills.overlay.risk.lowHint'),
-  }
-})
-
-const isOpen = computed(() => props.visible)
-
 useDialogA11y({
-  open: isOpen,
+  open: computed(() => props.visible),
   containerRef: dialogRef,
-  onEscape: () => emit('cancel'),
+  onEscape: () => emit('close'),
 })
 </script>
 
 <template>
   <Transition name="inspect-overlay">
-    <div v-if="visible" class="inspect-overlay" role="presentation" @click.self="emit('cancel')">
+    <div v-if="visible && report" class="inspect-overlay" role="presentation" @click.self="emit('close')">
       <section
         ref="dialogRef"
         class="inspect-overlay__card"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="skill-inspect-title"
-        aria-describedby="skill-inspect-subtitle"
+        aria-labelledby="audit-report-title"
         tabindex="-1"
       >
         <header class="inspect-overlay__header">
-          <h2 id="skill-inspect-title" class="inspect-overlay__title">{{ t('skills.overlay.title') }}</h2>
-          <p id="skill-inspect-subtitle" class="inspect-overlay__subtitle">{{ skill.id }} · v{{ skill.version }}</p>
+          <div>
+            <p class="inspect-overlay__eyebrow">Audit Report</p>
+            <h2 id="audit-report-title" class="inspect-overlay__title">{{ report.skillId }} · v{{ report.version }}</h2>
+          </div>
+          <SkillAuditBadge :severity="report.severity" :status="report.status" />
         </header>
 
         <section class="inspect-overlay__section">
-          <h3 class="inspect-overlay__section-title">{{ t('skills.overlay.toolsToCall') }}</h3>
-          <ul class="inspect-overlay__tool-list">
-            <li v-for="tool in toolsToCall" :key="tool" class="inspect-overlay__tool-item">
-              {{ tool }}
-            </li>
-            <li v-if="!toolsToCall.length" class="inspect-overlay__tool-item is-muted">{{ t('skills.overlay.noToolCalls') }}</li>
+          <h3 class="inspect-overlay__section-title">Summary</h3>
+          <p class="inspect-overlay__copy">{{ report.summary }}</p>
+        </section>
+
+        <section v-if="report.recommendedActions.length" class="inspect-overlay__section">
+          <h3 class="inspect-overlay__section-title">Recommended Actions</h3>
+          <ul class="inspect-overlay__list">
+            <li v-for="action in report.recommendedActions" :key="action">{{ action }}</li>
           </ul>
         </section>
 
-        <section class="inspect-overlay__section">
-          <h3 class="inspect-overlay__section-title">{{ t('skills.overlay.sectionPermissions') }}</h3>
-          <div v-if="permissions.length" class="inspect-overlay__permission-list">
-            <PermissionBadge
-              v-for="permission in permissions"
-              :key="permission.key"
-              :type="permission.type"
-              :value="permission.value"
-            />
+        <section v-if="report.findings.length" class="inspect-overlay__section">
+          <h3 class="inspect-overlay__section-title">Findings</h3>
+          <div class="inspect-overlay__finding-list">
+            <article v-for="finding in report.findings" :key="`${finding.code}-${finding.file ?? 'global'}`" class="inspect-overlay__finding">
+              <div class="inspect-overlay__finding-header">
+                <SkillAuditBadge :severity="finding.severity" />
+                <strong>{{ finding.title }}</strong>
+              </div>
+              <p class="inspect-overlay__copy">{{ finding.detail }}</p>
+              <code v-if="finding.file" class="inspect-overlay__file">{{ finding.file }}</code>
+            </article>
           </div>
-          <p v-else class="inspect-overlay__muted">{{ t('skills.overlay.emptyPermissions') }}</p>
         </section>
 
-        <section class="inspect-overlay__section">
-          <h3 class="inspect-overlay__section-title">{{ t('skills.overlay.sectionRisk') }}</h3>
-          <p class="inspect-overlay__risk-line">
-            <span class="inspect-overlay__risk-pill" :class="riskMeta.className">{{ riskMeta.label }}</span>
-            <span class="inspect-overlay__risk-hint">{{ riskMeta.hint }}</span>
-          </p>
+        <section v-if="report.toolCalls.length || report.suspiciousFiles.length" class="inspect-overlay__section">
+          <h3 class="inspect-overlay__section-title">Signals</h3>
+          <div class="inspect-overlay__signal-grid">
+            <div>
+              <p class="inspect-overlay__subhead">Tool Calls</p>
+              <ul class="inspect-overlay__list">
+                <li v-for="tool in report.toolCalls" :key="tool">{{ tool }}</li>
+                <li v-if="!report.toolCalls.length">No explicit tool-call hints found.</li>
+              </ul>
+            </div>
+            <div>
+              <p class="inspect-overlay__subhead">Suspicious Files</p>
+              <ul class="inspect-overlay__list">
+                <li v-for="file in report.suspiciousFiles" :key="file">{{ file }}</li>
+                <li v-if="!report.suspiciousFiles.length">No suspicious files detected.</li>
+              </ul>
+            </div>
+          </div>
         </section>
 
         <footer class="inspect-overlay__actions">
-          <AppButton variant="ghost" @click="emit('cancel')">{{ t('skills.overlay.cancel') }}</AppButton>
-          <AppButton variant="brand" @click="emit('confirm')">{{ t('skills.overlay.confirm') }}</AppButton>
+          <AppButton variant="ghost" @click="emit('close')">Close</AppButton>
         </footer>
       </section>
     </div>
@@ -171,31 +111,35 @@ useDialogA11y({
 }
 
 .inspect-overlay__card {
-  width: min(100%, 440px);
+  width: min(100%, 760px);
+  max-height: min(88vh, 860px);
+  overflow: auto;
   border-radius: var(--r-xl);
   border: 1px solid var(--border);
   background: var(--content-warm);
   box-shadow: var(--shadow-card);
   padding: calc(var(--sp) * 2.5);
   display: grid;
-  gap: calc(var(--sp) * 2);
+  gap: calc(var(--sp) * 1.5);
 }
 
 .inspect-overlay__header {
-  display: grid;
-  gap: calc(var(--sp) * 0.5);
+  display: flex;
+  justify-content: space-between;
+  gap: calc(var(--sp) * 1.5);
+  align-items: flex-start;
+}
+
+.inspect-overlay__eyebrow {
+  margin: 0 0 4px;
+  color: var(--text-3);
+  text-transform: uppercase;
+  font: var(--fw-semibold) var(--text-micro) / 1 var(--font-mono);
 }
 
 .inspect-overlay__title {
   margin: 0;
-  color: var(--text-1);
   font: var(--fw-semibold) var(--text-large) / var(--lh-tight) var(--font-mono);
-}
-
-.inspect-overlay__subtitle {
-  margin: 0;
-  color: var(--text-3);
-  font-size: var(--text-mini);
 }
 
 .inspect-overlay__section {
@@ -203,112 +147,71 @@ useDialogA11y({
   gap: calc(var(--sp) * 0.75);
 }
 
-.inspect-overlay__section-title {
-  margin: 0;
-  color: var(--text-2);
-  font: var(--fw-semibold) var(--text-mini) / 1.2 var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.inspect-overlay__tool-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: calc(var(--sp) * 0.75);
-}
-
-.inspect-overlay__tool-item {
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--surface-active);
-  color: var(--text-1);
-  font: var(--fw-medium) var(--text-mini) / 1.4 var(--font-mono);
-  padding: calc(var(--sp) * 0.75) calc(var(--sp) * 1);
-}
-
-.inspect-overlay__tool-item.is-muted {
-  color: var(--text-3);
-}
-
-.inspect-overlay__permission-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: calc(var(--sp) * 1);
-}
-
-.inspect-overlay__muted {
+.inspect-overlay__section-title,
+.inspect-overlay__subhead {
   margin: 0;
   color: var(--text-3);
-  font-size: var(--text-small);
-}
-
-.inspect-overlay__risk-line {
-  margin: 0;
-  display: grid;
-  gap: calc(var(--sp) * 0.75);
-}
-
-.inspect-overlay__risk-pill {
-  width: fit-content;
-  border-radius: var(--r-full);
-  padding: 4px 10px;
   font: var(--fw-semibold) var(--text-micro) / 1 var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: .04em;
 }
 
-.inspect-overlay__risk-hint {
+.inspect-overlay__copy {
+  margin: 0;
   color: var(--text-2);
   font-size: var(--text-small);
   line-height: var(--lh-normal);
 }
 
-.risk-high {
-  background: color-mix(in srgb, var(--syntax-string) 24%, transparent);
-  color: color-mix(in srgb, var(--syntax-string) 65%, var(--text-1));
+.inspect-overlay__finding-list {
+  display: grid;
+  gap: calc(var(--sp) * 0.75);
 }
 
-.risk-medium {
-  background: color-mix(in srgb, var(--syntax-string) 14%, var(--brand-subtle));
-  color: color-mix(in srgb, var(--syntax-string) 45%, var(--text-1));
+.inspect-overlay__finding {
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--content);
+  padding: calc(var(--sp) * 1.25);
+  display: grid;
+  gap: calc(var(--sp) * 0.5);
 }
 
-.risk-info {
-  background: color-mix(in srgb, var(--syntax-function) 16%, transparent);
-  color: var(--syntax-function);
+.inspect-overlay__finding-header {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--sp) * 0.75);
 }
 
-.risk-low {
-  background: color-mix(in srgb, var(--brand) 16%, transparent);
-  color: var(--brand);
+.inspect-overlay__signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(var(--sp) * 1.5);
+}
+
+.inspect-overlay__list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--text-2);
+  font-size: var(--text-small);
+  line-height: var(--lh-normal);
+}
+
+.inspect-overlay__file {
+  width: fit-content;
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+  background: var(--surface-active);
+  color: var(--text-2);
 }
 
 .inspect-overlay__actions {
   display: flex;
   justify-content: flex-end;
-  gap: calc(var(--sp) * 1);
 }
 
-.inspect-overlay-enter-active,
-.inspect-overlay-leave-active {
-  transition: opacity var(--speed-regular) var(--ease);
-}
-
-.inspect-overlay-enter-active .inspect-overlay__card,
-.inspect-overlay-leave-active .inspect-overlay__card {
-  transition: transform var(--speed-regular) var(--ease), opacity var(--speed-regular) var(--ease);
-}
-
-.inspect-overlay-enter-from,
-.inspect-overlay-leave-to {
-  opacity: 0;
-}
-
-.inspect-overlay-enter-from .inspect-overlay__card,
-.inspect-overlay-leave-to .inspect-overlay__card {
-  transform: scale(0.96) translateY(8px);
-  opacity: 0;
+@media (max-width: 720px) {
+  .inspect-overlay__signal-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

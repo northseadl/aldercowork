@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 
+import ArtifactBand from './ArtifactBand.vue'
+import ArtifactShelf from './ArtifactShelf.vue'
 import ChatMessage from './ChatMessage.vue'
 import StreamingMarkdown from './StreamingMarkdown.vue'
 import SkillCard from './SkillCard.vue'
@@ -8,12 +10,14 @@ import SkillCard from './SkillCard.vue'
 import { FileAttachment, PatchDiff, ReasoningBlock, RetryNotice, TokenStats } from './parts'
 
 import { useI18n } from '../../i18n'
-import type { ChatThreadMessage, MessagePart } from './types'
+import type { ChatThreadMessage, MessagePart, SessionArtifactSummary, TurnArtifactSummary } from './types'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   messages: ChatThreadMessage[]
+  turnArtifactsByTurnId?: Record<string, TurnArtifactSummary>
+  sessionArtifactSummary?: SessionArtifactSummary
 }>()
 
 const conversationRef = ref<HTMLElement | null>(null)
@@ -39,6 +43,7 @@ interface FormattedMessage extends ChatThreadMessage {
   hasText: boolean
   /** Model label for display (e.g. "anthropic · claude-sonnet-4-20250514") */
   modelLabel: string | undefined
+  artifactSummary?: TurnArtifactSummary
 }
 
 function classifyPartType(type: string | undefined): VisiblePartType | null {
@@ -81,6 +86,7 @@ const formattedMessages = computed<FormattedMessage[]>(() => {
       visibleParts,
       hasText,
       modelLabel,
+      artifactSummary: props.turnArtifactsByTurnId?.[message.artifactTurnId ?? message.id],
     }
   })
 })
@@ -101,7 +107,7 @@ const scrollToBottom = async (force = false) => {
 }
 
 watch(
-  () => props.messages,
+  () => [props.messages, props.turnArtifactsByTurnId, props.sessionArtifactSummary],
   () => { void scrollToBottom() },
 )
 
@@ -190,7 +196,10 @@ onMounted(() => { void scrollToBottom(true) })
             </div>
           </template>
 
-
+          <ArtifactBand
+            v-if="message.role === 'ai' && message.artifactSummary && message.artifactSummary.files.length > 0"
+            :summary="message.artifactSummary"
+          />
 
           <!-- Token stats (for assistant messages) -->
           <TokenStats
@@ -199,6 +208,11 @@ onMounted(() => { void scrollToBottom(true) })
             :cost="message.cost"
           />
         </ChatMessage>
+
+        <ArtifactShelf
+          v-if="props.sessionArtifactSummary && (props.sessionArtifactSummary.files.length > 0 || props.sessionArtifactSummary.error)"
+          :summary="props.sessionArtifactSummary"
+        />
       </div>
     </div>
 

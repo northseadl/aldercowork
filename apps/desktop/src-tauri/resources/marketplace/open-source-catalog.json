@@ -1,0 +1,114 @@
+{
+  "sourceLabel": "Open Skill Market",
+  "items": [
+    {
+      "id": "incident-commander",
+      "version": "1.2.0",
+      "publisher": "AlderCowork",
+      "license": "MIT",
+      "entry": "instruction",
+      "permissions": {
+        "fs": ["read"],
+        "network": [],
+        "shell": null
+      },
+      "compat": {
+        "aldercowork": ">=0.1.0"
+      },
+      "provenance": {
+        "source": "open-source",
+        "commit": "catalog-seed",
+        "digest": "ac451b5919f8e11b5e55ed998947f51a8c4b9f784189031dd314a4101111fafa"
+      },
+      "triggers": {
+        "keywords": ["incident", "outage", "postmortem"],
+        "file_patterns": []
+      },
+      "source": "open-source",
+      "displayName": "Incident Commander",
+      "summary": "Coordinate incident response, timeline capture, and postmortem handoff with a read-only operational checklist.",
+      "icon": null,
+      "categories": ["operations", "incident"],
+      "homepage": "https://example.com/incident-commander",
+      "repository": "https://example.com/incident-commander/repo",
+      "publishedAt": "2026-03-01",
+      "releaseNotes": "Refined timeline prompts and stakeholder update template.",
+      "package": {
+        "format": "inline",
+        "checksum": "ac451b5919f8e11b5e55ed998947f51a8c4b9f784189031dd314a4101111fafa",
+        "signature": null,
+        "url": null,
+        "inlineFiles": [
+          {
+            "path": "SKILL.md",
+            "content": "---\nname: Incident Commander\ndescription: Coordinate incident response with a safe, read-only workflow.\n---\n\n# Incident Commander\n\nUse this skill when an outage or production incident needs a fast coordination loop.\n\n- Build a timeline from available evidence\n- Identify open questions and next owners\n- Draft a stakeholder update before execution\n",
+            "executable": false
+          },
+          {
+            "path": "skill.yaml",
+            "content": "id: incident-commander\nversion: 1.2.0\npublisher: AlderCowork\nlicense: MIT\nentry: instruction\npermissions:\n  fs:\n    - read\ncompat:\n  aldercowork: \">=0.1.0\"\ntriggers:\n  keywords:\n    - incident\n    - outage\n    - postmortem\n  file_patterns: []\n",
+            "executable": false
+          }
+        ]
+      },
+      "minDesktopVersion": "0.1.2"
+    },
+    {
+      "id": "workspace-cleaner",
+      "version": "2.0.0",
+      "publisher": "Community",
+      "license": "Apache-2.0",
+      "entry": "script",
+      "permissions": {
+        "fs": ["read", "write"],
+        "network": ["https://api.example.com"],
+        "shell": "full"
+      },
+      "compat": {
+        "aldercowork": ">=0.1.0"
+      },
+      "provenance": {
+        "source": "open-source",
+        "commit": "catalog-seed",
+        "digest": "26ed7850d2b866cdf5ed4d101941f15a1e7fe4425c6126fd7e5a259a55994253"
+      },
+      "triggers": {
+        "keywords": ["cleanup", "workspace"],
+        "file_patterns": ["**/*.tmp"]
+      },
+      "source": "open-source",
+      "displayName": "Workspace Cleaner",
+      "summary": "Aggressive cleanup helper with write access and shell execution. Included to exercise audit blocking.",
+      "icon": null,
+      "categories": ["maintenance"],
+      "homepage": "https://example.com/workspace-cleaner",
+      "repository": "https://example.com/workspace-cleaner/repo",
+      "publishedAt": "2026-03-02",
+      "releaseNotes": "Added shell-driven cleanup routines and remote reporting hooks.",
+      "package": {
+        "format": "inline",
+        "checksum": "26ed7850d2b866cdf5ed4d101941f15a1e7fe4425c6126fd7e5a259a55994253",
+        "signature": null,
+        "url": null,
+        "inlineFiles": [
+          {
+            "path": "SKILL.md",
+            "content": "---\nname: Workspace Cleaner\ndescription: Dangerous maintenance workflow that can delete files and invoke shell commands.\n---\n\n# Workspace Cleaner\n\nThis skill is intentionally high-risk for audit validation.\n\n- Review files marked for deletion\n- Execute cleanup scripts only after explicit approval\n- Never run on a workspace with uncommitted critical changes\n",
+            "executable": false
+          },
+          {
+            "path": "cleanup.sh",
+            "content": "#!/usr/bin/env bash\nset -euo pipefail\nrm -rf \"$PWD/tmp\"\ncurl https://api.example.com/report\n",
+            "executable": true
+          },
+          {
+            "path": "skill.yaml",
+            "content": "id: workspace-cleaner\nversion: 2.0.0\npublisher: Community\nlicense: Apache-2.0\nentry: script\npermissions:\n  fs:\n    - read\n    - write\n  network:\n    - https://api.example.com\n  shell: full\ncompat:\n  aldercowork: \">=0.1.0\"\ntriggers:\n  keywords:\n    - cleanup\n    - workspace\n  file_patterns:\n    - \"**/*.tmp\"\n",
+            "executable": false
+          }
+        ]
+      },
+      "minDesktopVersion": "0.1.2"
+    }
+  ]
+}

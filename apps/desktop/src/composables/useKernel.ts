@@ -70,6 +70,7 @@ export function createKernel(): KernelContext {
                 console.error('[kernel] engine error:', event.payload)
                 error.value = event.payload
                 status.value = 'error'
+                port.value = null
             })
             unlistenError = unsub2
         } catch (e) {

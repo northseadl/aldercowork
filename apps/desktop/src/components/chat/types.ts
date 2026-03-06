@@ -1,4 +1,5 @@
 import type { MessagePart, RichMessage, TokenInfo } from '../../stores/session'
+import type { SessionArtifactSummary, TurnArtifactSummary } from '../../types/artifacts'
 
 export type ChatRole = 'user' | 'ai'
 
@@ -16,6 +17,7 @@ export interface SkillCardData {
 
 export interface ChatThreadMessage {
   id: string
+  artifactTurnId?: string
   role: ChatRole
   author: string
   timestamp: string
@@ -30,3 +32,4 @@ export interface ChatThreadMessage {
 }
 
 export type { MessagePart, RichMessage }
+export type { SessionArtifactSummary, TurnArtifactSummary }

@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import { useDialogA11y } from '../../composables/useDialogA11y'
-import { useI18n } from '../../i18n'
 import { AppButton } from '../ui'
 
 const props = defineProps<{
   visible: boolean
-  importing: boolean
-  importError: string | null
+  busy: boolean
+  error: string | null
 }>()
 
 const emit = defineEmits<{
@@ -17,24 +16,19 @@ const emit = defineEmits<{
   importGit: [url: string]
 }>()
 
-const { t } = useI18n()
 const dialogRef = ref<HTMLElement | null>(null)
 const gitUrl = ref('')
 const activeTab = ref<'archive' | 'git'>('archive')
 
-const isOpen = computed(() => props.visible)
-const canSubmitGit = computed(() => {
-  const url = gitUrl.value.trim()
-  return url.startsWith('https://') || url.startsWith('git@')
-})
+const canSubmitGit = computed(() => gitUrl.value.trim().startsWith('https://') || gitUrl.value.trim().startsWith('git@'))
 
 useDialogA11y({
-  open: isOpen,
+  open: computed(() => props.visible),
   containerRef: dialogRef,
   onEscape: () => emit('cancel'),
 })
 
-function handleGitSubmit() {
+function submitGit() {
   if (!canSubmitGit.value) return
   emit('importGit', gitUrl.value.trim())
 }
@@ -52,81 +46,49 @@ function handleGitSubmit() {
         tabindex="-1"
       >
         <header class="import-dialog__header">
-          <h2 id="import-dialog-title" class="import-dialog__title">{{ t('skills.import.title') }}</h2>
-          <p class="import-dialog__subtitle">{{ t('skills.import.subtitle') }}</p>
+          <h2 id="import-dialog-title" class="import-dialog__title">Stage Manual Import</h2>
+          <p class="import-dialog__subtitle">Archive and Git imports now enter the same audit-first install flow.</p>
         </header>
 
         <nav class="import-dialog__tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            class="import-dialog__tab"
-            :class="{ 'is-active': activeTab === 'archive' }"
-            :aria-selected="activeTab === 'archive'"
-            @click="activeTab = 'archive'"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="import-dialog__tab-icon">
-              <path d="M21 8v13H3V8" /><path d="M1 3h22v5H1z" /><path d="M10 12h4" />
-            </svg>
-            {{ t('skills.import.tabArchive') }}
+          <button type="button" class="import-dialog__tab" :class="{ 'is-active': activeTab === 'archive' }" @click="activeTab = 'archive'">
+            Archive
           </button>
-          <button
-            type="button"
-            role="tab"
-            class="import-dialog__tab"
-            :class="{ 'is-active': activeTab === 'git' }"
-            :aria-selected="activeTab === 'git'"
-            @click="activeTab = 'git'"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="import-dialog__tab-icon">
-              <circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
-            </svg>
-            {{ t('skills.import.tabGit') }}
+          <button type="button" class="import-dialog__tab" :class="{ 'is-active': activeTab === 'git' }" @click="activeTab = 'git'">
+            Git
           </button>
         </nav>
 
         <div class="import-dialog__body">
-          <!-- Archive import -->
           <div v-if="activeTab === 'archive'" class="import-dialog__panel">
-            <p class="import-dialog__hint">{{ t('skills.import.archiveHint') }}</p>
-            <AppButton
-              variant="brand"
-              :disabled="importing"
-              @click="emit('importArchive')"
-            >
-              {{ importing ? t('skills.import.importing') : t('skills.import.selectFile') }}
+            <p class="import-dialog__hint">Choose a `.zip`, `.tar.gz`, `.tgz`, or `.tar` package. The skill will be staged and audited before install.</p>
+            <AppButton variant="brand" :disabled="busy" @click="emit('importArchive')">
+              {{ busy ? 'Staging…' : 'Select Archive' }}
             </AppButton>
           </div>
 
-          <!-- Git import -->
-          <div v-if="activeTab === 'git'" class="import-dialog__panel">
-            <p class="import-dialog__hint">{{ t('skills.import.gitHint') }}</p>
+          <div v-else class="import-dialog__panel">
             <label class="import-dialog__field">
-              <span class="import-dialog__label">{{ t('skills.import.gitUrlLabel') }}</span>
+              <span class="import-dialog__label">Git URL</span>
               <input
                 v-model="gitUrl"
                 type="url"
                 class="import-dialog__input"
-                :placeholder="t('skills.import.gitUrlPlaceholder')"
-                :disabled="importing"
-                @keydown.enter="handleGitSubmit"
+                placeholder="https://github.com/user/repo or .../tree/main/skill"
+                :disabled="busy"
+                @keydown.enter="submitGit"
               />
             </label>
-            <AppButton
-              variant="brand"
-              :disabled="!canSubmitGit || importing"
-              @click="handleGitSubmit"
-            >
-              {{ importing ? t('skills.import.cloning') : t('skills.import.clone') }}
+            <AppButton variant="brand" :disabled="busy || !canSubmitGit" @click="submitGit">
+              {{ busy ? 'Staging…' : 'Stage Git Import' }}
             </AppButton>
           </div>
 
-          <!-- Error display -->
-          <p v-if="importError" class="import-dialog__error" role="alert">{{ importError }}</p>
+          <p v-if="error" class="import-dialog__error" role="alert">{{ error }}</p>
         </div>
 
         <footer class="import-dialog__actions">
-          <AppButton variant="ghost" @click="emit('cancel')">{{ t('common.close') }}</AppButton>
+          <AppButton variant="ghost" @click="emit('cancel')">Close</AppButton>
         </footer>
       </section>
     </div>
@@ -153,78 +115,23 @@ function handleGitSubmit() {
   box-shadow: var(--shadow-card);
   padding: calc(var(--sp) * 2.5);
   display: grid;
-  gap: calc(var(--sp) * 2);
+  gap: calc(var(--sp) * 1.5);
 }
 
-.import-dialog__header {
+.import-dialog__header,
+.import-dialog__body,
+.import-dialog__panel,
+.import-dialog__field {
   display: grid;
-  gap: calc(var(--sp) * 0.5);
+  gap: calc(var(--sp) * 0.75);
 }
 
 .import-dialog__title {
   margin: 0;
-  color: var(--text-1);
   font: var(--fw-semibold) var(--text-large) / var(--lh-tight) var(--font-mono);
 }
 
-.import-dialog__subtitle {
-  margin: 0;
-  color: var(--text-3);
-  font-size: var(--text-small);
-  line-height: var(--lh-normal);
-}
-
-.import-dialog__tabs {
-  display: flex;
-  gap: calc(var(--sp) * 0.5);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: calc(var(--sp) * 0.5);
-}
-
-.import-dialog__tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid transparent;
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--text-3);
-  font: var(--fw-medium) var(--text-small) / 1 var(--font-mono);
-  cursor: pointer;
-  transition:
-    color var(--speed-regular) var(--ease),
-    background var(--speed-regular) var(--ease),
-    border-color var(--speed-regular) var(--ease);
-}
-
-.import-dialog__tab:hover {
-  color: var(--text-2);
-  background: var(--surface-hover);
-}
-
-.import-dialog__tab.is-active {
-  color: var(--brand);
-  background: var(--brand-subtle);
-  border-color: var(--brand);
-}
-
-.import-dialog__tab-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.import-dialog__body {
-  display: grid;
-  gap: calc(var(--sp) * 1.5);
-}
-
-.import-dialog__panel {
-  display: grid;
-  gap: calc(var(--sp) * 1.25);
-}
-
+.import-dialog__subtitle,
 .import-dialog__hint {
   margin: 0;
   color: var(--text-2);
@@ -232,76 +139,53 @@ function handleGitSubmit() {
   line-height: var(--lh-normal);
 }
 
-.import-dialog__field {
-  display: grid;
+.import-dialog__tabs {
+  display: flex;
   gap: calc(var(--sp) * 0.5);
+}
+
+.import-dialog__tab {
+  min-height: 34px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-3);
+  padding: 0 calc(var(--sp) * 1.25);
+  font: var(--fw-medium) var(--text-small) / 1 var(--font-mono);
+}
+
+.import-dialog__tab.is-active {
+  border-color: var(--brand);
+  background: var(--brand-subtle);
+  color: var(--brand);
 }
 
 .import-dialog__label {
   color: var(--text-3);
-  font: var(--fw-medium) var(--text-micro) / 1 var(--font-mono);
+  font: var(--fw-semibold) var(--text-micro) / 1 var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: .04em;
 }
 
 .import-dialog__input {
-  height: 38px;
+  min-height: 38px;
   border-radius: var(--r-md);
   border: 1px solid var(--border);
   background: var(--content);
   color: var(--text-1);
-  font-size: var(--text-small);
-  font-family: var(--font-mono);
   padding: 0 calc(var(--sp) * 1.25);
-  outline: none;
-  transition:
-    border-color var(--speed-regular) var(--ease),
-    box-shadow var(--speed-regular) var(--ease);
-}
-
-.import-dialog__input::placeholder {
-  color: var(--text-3);
-}
-
-.import-dialog__input:focus-visible {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-subtle);
 }
 
 .import-dialog__error {
   margin: 0;
-  padding: calc(var(--sp) * 1) calc(var(--sp) * 1.25);
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--syntax-string) 12%, transparent);
-  color: color-mix(in srgb, var(--syntax-string) 70%, var(--text-1));
+  padding: calc(var(--sp) * 1);
+  background: rgba(239, 68, 68, .12);
+  color: #b91c1c;
   font-size: var(--text-small);
-  line-height: var(--lh-normal);
-  word-break: break-word;
 }
 
 .import-dialog__actions {
   display: flex;
   justify-content: flex-end;
-}
-
-.import-dialog-enter-active,
-.import-dialog-leave-active {
-  transition: opacity var(--speed-regular) var(--ease);
-}
-
-.import-dialog-enter-active .import-dialog,
-.import-dialog-leave-active .import-dialog {
-  transition: transform var(--speed-regular) var(--ease), opacity var(--speed-regular) var(--ease);
-}
-
-.import-dialog-enter-from,
-.import-dialog-leave-to {
-  opacity: 0;
-}
-
-.import-dialog-enter-from .import-dialog,
-.import-dialog-leave-to .import-dialog {
-  transform: scale(0.96) translateY(8px);
-  opacity: 0;
 }
 </style>

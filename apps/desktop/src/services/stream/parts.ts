@@ -44,6 +44,7 @@ export function parseToolFromPart(
     const previous = options.previous
     const explicitStatus = state.status ?? part.status
     const parsedStatus = parseToolStatus(explicitStatus)
+    const rawAttachments = Array.isArray(state.attachments) ? state.attachments : Array.isArray(part.attachments) ? part.attachments : []
 
     const status: ToolStatus = parsedStatus
         ?? (rawError !== undefined && rawError !== null ? 'failed' : null)
@@ -58,6 +59,16 @@ export function parseToolFromPart(
         output: rawOutput === undefined ? previous?.output : stringifyValue(rawOutput),
         status,
         title: asString(state.title) ?? previous?.title ?? undefined,
+        attachments: rawAttachments.length > 0 ? rawAttachments.map((item) => {
+            const attachment = asRecord(item)
+            const source = asRecord(attachment.source)
+            return {
+                mime: asString(attachment.mime) ?? 'application/octet-stream',
+                url: asString(attachment.url) ?? '',
+                filename: asString(attachment.filename) ?? undefined,
+                path: asString(source.path) ?? undefined,
+            }
+        }).filter((item) => item.url || item.filename || item.path) : previous?.attachments,
     }
 }
 
