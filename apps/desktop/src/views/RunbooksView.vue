@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref, watchEffect } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 
 import { RunbookEditor, RunbookListItem } from '../components/runbooks'
+import { serializeForPrompt } from '../components/runbooks/types'
 import { useI18n } from '../i18n'
 import { useConfirm, useToast } from '../composables'
+import { useKernel } from '../composables/useKernel'
 import { useRunbookStore } from '../stores/runbook'
 import { useSessionStore } from '../stores/session'
-import { RUNBOOK_DRAFT_STORAGE_KEY, RUNBOOK_SEND_EVENT } from '../constants/runbook'
 
 const { t } = useI18n()
 const toast = useToast()
@@ -16,6 +17,7 @@ const { confirm } = useConfirm()
 const router = useRouter()
 const runbookStore = useRunbookStore()
 const sessionStore = useSessionStore()
+const { status: kernelStatus } = useKernel()
 
 const {
   runbooks,
@@ -27,23 +29,22 @@ const {
 
 const searchKeyword = ref('')
 const creating = ref(false)
+const sending = ref(false)
 
-const filteredRunbooks = ref(runbooks.value)
-
-watchEffect(() => {
-  const kw = searchKeyword.value.trim().toLowerCase()
-  filteredRunbooks.value = kw
-    ? runbooks.value.filter((r) =>
-        r.name.toLowerCase().includes(kw) ||
-        r.content.toLowerCase().includes(kw))
-    : runbooks.value
+const filteredRunbooks = computed(() => {
+  if (!searchKeyword.value.trim()) return runbooks.value
+  const kw = searchKeyword.value.toLowerCase()
+  return runbooks.value.filter((r) =>
+    r.name.toLowerCase().includes(kw)
+    || r.body.toLowerCase().includes(kw)
+    || r.steps.some((s) => s.text.toLowerCase().includes(kw)),
+  )
 })
 
 async function handleCreate() {
   creating.value = true
   try {
-    await runbookStore.createRunbook(t('runbooks.untitled'))
-    toast.info(t('runbooks.created'))
+    await runbookStore.createRunbook()
   } finally {
     creating.value = false
   }
@@ -53,12 +54,14 @@ function handleSelect(id: string) {
   runbookStore.selectRunbook(id)
 }
 
-async function handleUpdateName(id: string, name: string) {
-  await runbookStore.updateRunbook(id, { name })
+async function handleUpdateName(name: string) {
+  if (!selectedRunbook.value) return
+  await runbookStore.updateRunbook(selectedRunbook.value.id, { name })
 }
 
-async function handleUpdateContent(id: string, content: string) {
-  await runbookStore.updateRunbook(id, { content })
+async function handleUpdateBody(body: string) {
+  if (!selectedRunbook.value) return
+  await runbookStore.updateRunbook(selectedRunbook.value.id, { body })
 }
 
 async function handleDelete() {
@@ -74,33 +77,64 @@ async function handleDelete() {
   toast.info(t('runbooks.deleted'))
 }
 
-async function handleSendToChat(id: string, content: string) {
-  if (!content.trim()) return
+// --- Delegate to ChatView's send pipeline via pendingPrompt ---
+async function handleExecute() {
+  const rb = selectedRunbook.value
+  if (!rb) return
 
-  // Ensure a session exists, then navigate and send
-  const sid = await sessionStore.ensureActiveSession()
-  if (!sid) {
-    toast.error(t('runbooks.sendFailed'))
+  const prompt = serializeForPrompt(rb)
+  if (!prompt.trim()) return
+
+  // Guard: kernel must be running
+  if (kernelStatus.value !== 'running') {
+    toast.error(t('runbooks.engineNotReady'))
     return
   }
 
-  // Best effort: ensure the latest editor content is persisted.
-  void runbookStore.updateRunbook(id, { content })
-
+  sending.value = true
   try {
-    window.sessionStorage.setItem(RUNBOOK_DRAFT_STORAGE_KEY, content)
-  } catch {
-    // Best effort fallback to in-memory event only.
+    // Ensure we have a real remote session
+    const sid = await sessionStore.ensureActiveSession()
+    if (!sid || sid.startsWith('local-')) {
+      toast.error(t('runbooks.sendFailed'))
+      return
+    }
+
+    // Deposit the prompt for ChatView to consume through its full SSE streaming pipeline.
+    // This replaces the previous direct `promptAsync` call which bypassed event stream
+    // subscription and resulted in a silent response (no streaming rendering).
+    sessionStore.setPendingPrompt({ text: prompt })
+
+    // Navigate to chat — ChatView will detect the pending prompt and auto-send
+    toast.info(t('runbooks.sentToChat'))
+    void router.push('/')
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error)
+    toast.error(msg)
+  } finally {
+    sending.value = false
   }
+}
 
-  // Dispatch a custom event so an already-mounted ChatView can consume immediately.
-  window.dispatchEvent(new CustomEvent(RUNBOOK_SEND_EVENT, {
-    detail: { content },
-  }))
+// --- Step operations ---
+function handleAddStep(text: string) {
+  if (!selectedRunbook.value) return
+  runbookStore.addStep(selectedRunbook.value.id, text)
+}
 
-  // Navigate to chat
-  void router.push('/')
-  toast.info(t('runbooks.sentToChat'))
+function handleUpdateStep(stepId: string, patch: { text?: string; checked?: boolean }) {
+  if (!selectedRunbook.value) return
+  runbookStore.updateStep(selectedRunbook.value.id, stepId, patch)
+}
+
+function handleRemoveStep(stepId: string) {
+  if (!selectedRunbook.value) return
+  runbookStore.removeStep(selectedRunbook.value.id, stepId)
+}
+
+function handleMoveStep(stepId: string, direction: -1 | 1) {
+  if (!selectedRunbook.value) return
+  runbookStore.moveStep(selectedRunbook.value.id, stepId, direction)
 }
 
 function clearSearch() {
@@ -117,169 +151,154 @@ onMounted(() => {
 <template>
   <section class="runbooks-view">
     <header class="runbooks-view__toolbar">
-      <div>
-        <h1 class="runbooks-view__title">{{ t('runbooks.panelTitle') }}</h1>
-        <p class="runbooks-view__subtitle">{{ t('runbooks.panelSubtitle') }}</p>
-      </div>
-
-      <div class="runbooks-view__toolbar-actions">
+      <div class="runbooks-view__search-wrap">
+        <input
+          v-model="searchKeyword"
+          type="search"
+          class="runbooks-view__search"
+          :placeholder="t('runbooks.searchPlaceholder')"
+        />
         <button
+          v-if="searchKeyword"
           type="button"
-          class="runbooks-view__create-btn"
-          :disabled="creating"
-          @click="handleCreate"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="runbooks-view__create-icon">
-            <path d="M12 5v14" /><path d="M5 12h14" />
-          </svg>
-          {{ t('runbooks.create') }}
-        </button>
-
-        <label class="runbooks-view__search" for="runbooks-search">
-          <span class="runbooks-view__search-label">{{ t('runbooks.searchLabel') }}</span>
-          <div class="runbooks-view__search-wrapper">
-            <input
-              id="runbooks-search"
-              v-model="searchKeyword"
-              type="search"
-              class="runbooks-view__search-input"
-              :placeholder="t('runbooks.searchPlaceholder')"
-            />
-            <button
-              v-if="searchKeyword.trim()"
-              type="button"
-              class="runbooks-view__search-clear"
-              :aria-label="t('common.clear')"
-              @click="clearSearch"
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        </label>
+          class="runbooks-view__clear-btn"
+          @click="clearSearch"
+        >×</button>
       </div>
+
+      <button
+        type="button"
+        class="runbooks-view__create-btn"
+        :disabled="creating"
+        @click="handleCreate"
+      >
+        + {{ t('runbooks.createNew') }}
+      </button>
     </header>
 
-    <div class="runbooks-view__layout">
+    <div class="runbooks-view__body">
       <!-- List pane -->
-      <aside class="runbooks-view__list-pane" :aria-label="t('runbooks.listLabel')">
-        <p class="runbooks-view__result-count">
-          {{ t('runbooks.resultCount').replace('{count}', String(filteredRunbooks.length)) }}
-          <span v-if="saving" class="runbooks-view__saving">{{ t('runbooks.saving') }}</span>
-        </p>
-
-        <div v-if="filteredRunbooks.length" class="runbooks-view__list">
-          <RunbookListItem
-            v-for="rb in filteredRunbooks"
-            :key="rb.id"
-            :runbook="rb"
-            :selected="rb.id === selectedId"
-            @select="handleSelect"
-          />
+      <aside class="runbooks-view__list">
+        <div v-if="!loaded" class="runbooks-view__loading">
+          {{ t('common.loading') }}
         </div>
-
-        <div v-else-if="searchKeyword.trim()" class="runbooks-view__empty-list">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <p>{{ t('runbooks.noMatch') }}</p>
-          <button type="button" class="runbooks-view__empty-action-btn" @click="clearSearch">
-            {{ t('runbooks.clearSearch') }}
-          </button>
+        <div v-else-if="filteredRunbooks.length === 0" class="runbooks-view__empty">
+          {{ searchKeyword ? t('runbooks.noResults') : t('runbooks.emptyState') }}
         </div>
-
-        <div v-else class="runbooks-view__empty-list">
-          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.4">
-            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-            <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
-            <path d="M9 14l2 2 4-4" />
-          </svg>
-          <p>{{ t('runbooks.emptyDesc') }}</p>
-          <button type="button" class="runbooks-view__empty-action-btn" @click="handleCreate">
-            {{ t('runbooks.createFirst') }}
-          </button>
-        </div>
+        <RunbookListItem
+          v-for="rb in filteredRunbooks"
+          v-else
+          :key="rb.id"
+          :runbook="rb"
+          :selected="rb.id === selectedId"
+          @select="handleSelect"
+        />
       </aside>
 
       <!-- Editor pane -->
-      <section class="runbooks-view__editor-pane" :aria-label="t('runbooks.editorLabel')">
+      <main class="runbooks-view__editor">
+        <div v-if="!selectedRunbook" class="runbooks-view__no-selection">
+          <p>{{ t('runbooks.selectToEdit') }}</p>
+        </div>
         <RunbookEditor
-          v-if="selectedRunbook"
+          v-else
+          :key="selectedRunbook.id"
           :runbook="selectedRunbook"
           @update:name="handleUpdateName"
-          @update:content="handleUpdateContent"
+          @update:body="handleUpdateBody"
+          @add-step="handleAddStep"
+          @update-step="handleUpdateStep"
+          @remove-step="handleRemoveStep"
+          @move-step="handleMoveStep"
+          @execute="handleExecute"
           @delete="handleDelete"
-          @send="handleSendToChat"
         />
+      </main>
+    </div>
 
-        <div v-else class="runbooks-view__editor-empty">
-          <p>{{ t('runbooks.selectOrCreate') }}</p>
-        </div>
-      </section>
+    <!-- Saving indicator -->
+    <div v-if="saving || sending" class="runbooks-view__saving">
+      {{ sending ? t('runbooks.sending') : t('runbooks.saving') }}
     </div>
   </section>
 </template>
 
 <style scoped>
 .runbooks-view {
-  height: 100%;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  background: var(--content);
-}
-
-.runbooks-view__toolbar {
-  padding: calc(var(--sp) * 2.5) calc(var(--sp) * 3);
-  border-bottom: 1px solid var(--border);
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: calc(var(--sp) * 2);
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
-.runbooks-view__title {
-  margin: 0;
-  font: var(--fw-semibold) 1.125rem / var(--lh-tight) var(--font-mono);
+/* Toolbar — matches SkillsView padding for cross-page alignment */
+.runbooks-view__toolbar {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--sp) * 1);
+  padding: calc(var(--sp) * 2) calc(var(--sp) * 2) calc(var(--sp) * 1.5);
+  flex-shrink: 0;
+}
+
+.runbooks-view__search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 280px;
+}
+
+.runbooks-view__search {
+  width: 100%;
+  padding: 6px 12px;
+  font: var(--fw-normal) var(--text-sm) / 1.4 var(--font);
+  color: var(--text-1);
+  background: var(--content);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.runbooks-view__search:focus {
+  border-color: var(--brand);
+}
+
+.runbooks-view__clear-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.runbooks-view__clear-btn:hover {
+  background: var(--surface-hover);
   color: var(--text-1);
 }
 
-.runbooks-view__subtitle {
-  margin: calc(var(--sp) * 0.5) 0 0;
-  color: var(--text-3);
-  font-size: var(--text-small);
-  line-height: var(--lh-normal);
-}
-
-.runbooks-view__toolbar-actions {
-  display: flex;
-  align-items: flex-end;
-  gap: calc(var(--sp) * 1.5);
-}
-
 .runbooks-view__create-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 calc(var(--sp) * 1.5);
   border: 1px solid var(--brand);
+  background: var(--brand);
+  color: var(--on-brand);
   border-radius: var(--r-md);
-  background: var(--brand-subtle);
-  color: var(--brand);
-  font: var(--fw-semibold) var(--text-small) / 1 var(--font-mono);
+  padding: 6px 14px;
+  font: var(--fw-medium) var(--text-sm) / 1.2 var(--font);
   cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background var(--speed-regular) var(--ease),
-    color var(--speed-regular) var(--ease);
+  transition: filter 0.12s;
+  flex-shrink: 0;
 }
 
-.runbooks-view__create-btn:hover {
-  background: var(--brand);
-  color: var(--text-on-brand, #fff);
+.runbooks-view__create-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
 }
 
 .runbooks-view__create-btn:disabled {
@@ -287,183 +306,66 @@ onMounted(() => {
   cursor: not-allowed;
 }
 
-.runbooks-view__create-icon {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.runbooks-view__search {
+/* Body: master-detail layout — boundless design (gap + containerized panels) */
+.runbooks-view__body {
   display: grid;
-  gap: calc(var(--sp) * 0.75);
-  min-width: min(280px, 100%);
-}
-
-.runbooks-view__search-label {
-  color: var(--text-3);
-  font: var(--fw-medium) var(--text-micro) / 1 var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.runbooks-view__search-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.runbooks-view__search-input {
-  width: 100%;
-  height: 36px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--content-warm);
-  color: var(--text-1);
-  font-size: var(--text-small);
-  padding: 0 calc(var(--sp) * 3) 0 calc(var(--sp) * 1.25);
-  outline: none;
-  transition:
-    border-color var(--speed-regular) var(--ease),
-    box-shadow var(--speed-regular) var(--ease);
-}
-
-.runbooks-view__search-input::placeholder {
-  color: var(--text-3);
-}
-
-.runbooks-view__search-input:focus-visible {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px var(--brand-subtle);
-}
-
-.runbooks-view__search-clear {
-  position: absolute;
-  right: 6px;
-  width: 24px;
-  height: 24px;
-  border: 0;
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-  border-radius: var(--r-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color var(--speed-quick), background var(--speed-quick);
-}
-
-.runbooks-view__search-clear:hover {
-  color: var(--text-1);
-  background: var(--surface-hover);
-}
-
-.runbooks-view__layout {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-}
-
-.runbooks-view__list-pane {
-  min-height: 0;
-  border-right: 1px solid var(--border);
-  padding: calc(var(--sp) * 2);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: calc(var(--sp) * 1.5);
-}
-
-.runbooks-view__result-count {
-  margin: 0;
-  color: var(--text-3);
-  font: var(--fw-medium) var(--text-mini) / 1 var(--font-mono);
-  display: flex;
-  align-items: center;
-  gap: var(--sp);
-}
-
-.runbooks-view__saving {
-  color: var(--brand);
-  font-size: var(--text-micro);
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  flex: 1;
+  overflow: hidden;
+  gap: calc(var(--sp) * 1);
+  padding: 0 calc(var(--sp) * 1.5) calc(var(--sp) * 1.5);
 }
 
 .runbooks-view__list {
   min-height: 0;
   overflow-y: auto;
-  display: grid;
-  align-content: start;
-  gap: calc(var(--sp) * 1);
-  padding-right: calc(var(--sp) * 0.5);
-}
-
-.runbooks-view__empty-list {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: calc(var(--sp) * 1.5);
-  text-align: center;
-  color: var(--text-3);
-  font-size: var(--text-small);
-  padding: calc(var(--sp) * 4) 0;
-}
-
-.runbooks-view__empty-action-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 8px 16px;
-  border: 1px dashed var(--border);
-  border-radius: var(--r-md);
-  background: transparent;
-  color: var(--brand);
-  font: var(--fw-medium) var(--text-small) / 1 var(--font-mono);
-  cursor: pointer;
-  transition:
-    border-color var(--speed-regular) var(--ease),
-    background var(--speed-regular) var(--ease);
-}
-
-.runbooks-view__empty-action-btn:hover {
-  border-color: var(--brand);
-  background: var(--brand-subtle);
-}
-
-.runbooks-view__editor-pane {
-  min-height: 0;
-  padding: calc(var(--sp) * 2);
-}
-
-.runbooks-view__editor-empty {
-  height: 100%;
-  border: 1px dashed var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--r-xl);
+  background: var(--content-warm);
+  padding: calc(var(--sp) * 0.75);
+}
+
+.runbooks-view__editor {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.runbooks-view__loading,
+.runbooks-view__empty {
   display: grid;
   place-items: center;
+  height: 100%;
   color: var(--text-3);
-  font-size: var(--text-small);
+  font: var(--fw-normal) var(--text-sm) / 1.4 var(--font);
+  padding: calc(var(--sp) * 2);
+  text-align: center;
+}
+
+.runbooks-view__no-selection {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--text-3);
+  font: var(--fw-normal) var(--text-sm) / 1.4 var(--font);
+  padding: calc(var(--sp) * 2);
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-xl);
   background: var(--content-warm);
 }
 
-@media (max-width: 1024px) {
-  .runbooks-view__toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .runbooks-view__toolbar-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .runbooks-view__search { min-width: 0; }
-
-  .runbooks-view__layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(200px, 1fr) minmax(300px, 1fr);
-  }
-
-  .runbooks-view__list-pane {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
+/* Saving indicator */
+.runbooks-view__saving {
+  position: absolute;
+  bottom: calc(var(--sp) * 2);
+  right: calc(var(--sp) * 2);
+  padding: 4px 12px;
+  font: var(--fw-medium) var(--text-micro) / 1.2 var(--font-mono);
+  color: var(--text-3);
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  pointer-events: none;
+  opacity: 0.8;
 }
 </style>

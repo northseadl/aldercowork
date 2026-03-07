@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import type { SkillAuditReport } from '@aldercowork/skill-schema'
 
 import { useDialogA11y } from '../../composables/useDialogA11y'
+import { useI18n } from '../../i18n'
 import { AppButton } from '../ui'
 import SkillAuditBadge from './SkillAuditBadge.vue'
 
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   close: []
 }>()
 
+const { t } = useI18n()
 const dialogRef = ref<HTMLElement | null>(null)
 
 useDialogA11y({
@@ -38,26 +40,26 @@ useDialogA11y({
       >
         <header class="inspect-overlay__header">
           <div>
-            <p class="inspect-overlay__eyebrow">Audit Report</p>
+            <p class="inspect-overlay__eyebrow">{{ t('skills.inspect.reportTitle') }}</p>
             <h2 id="audit-report-title" class="inspect-overlay__title">{{ report.skillId }} · v{{ report.version }}</h2>
           </div>
           <SkillAuditBadge :severity="report.severity" :status="report.status" />
         </header>
 
         <section class="inspect-overlay__section">
-          <h3 class="inspect-overlay__section-title">Summary</h3>
+          <h3 class="inspect-overlay__section-title">{{ t('skills.inspect.sectionSummary') }}</h3>
           <p class="inspect-overlay__copy">{{ report.summary }}</p>
         </section>
 
         <section v-if="report.recommendedActions.length" class="inspect-overlay__section">
-          <h3 class="inspect-overlay__section-title">Recommended Actions</h3>
+          <h3 class="inspect-overlay__section-title">{{ t('skills.inspect.sectionRecommended') }}</h3>
           <ul class="inspect-overlay__list">
             <li v-for="action in report.recommendedActions" :key="action">{{ action }}</li>
           </ul>
         </section>
 
         <section v-if="report.findings.length" class="inspect-overlay__section">
-          <h3 class="inspect-overlay__section-title">Findings</h3>
+          <h3 class="inspect-overlay__section-title">{{ t('skills.inspect.sectionFindings') }}</h3>
           <div class="inspect-overlay__finding-list">
             <article v-for="finding in report.findings" :key="`${finding.code}-${finding.file ?? 'global'}`" class="inspect-overlay__finding">
               <div class="inspect-overlay__finding-header">
@@ -71,27 +73,27 @@ useDialogA11y({
         </section>
 
         <section v-if="report.toolCalls.length || report.suspiciousFiles.length" class="inspect-overlay__section">
-          <h3 class="inspect-overlay__section-title">Signals</h3>
+          <h3 class="inspect-overlay__section-title">{{ t('skills.inspect.sectionSignals') }}</h3>
           <div class="inspect-overlay__signal-grid">
             <div>
-              <p class="inspect-overlay__subhead">Tool Calls</p>
+              <p class="inspect-overlay__subhead">{{ t('skills.inspect.toolCalls') }}</p>
               <ul class="inspect-overlay__list">
                 <li v-for="tool in report.toolCalls" :key="tool">{{ tool }}</li>
-                <li v-if="!report.toolCalls.length">No explicit tool-call hints found.</li>
+                <li v-if="!report.toolCalls.length">{{ t('skills.inspect.noToolCallHints') }}</li>
               </ul>
             </div>
             <div>
-              <p class="inspect-overlay__subhead">Suspicious Files</p>
+              <p class="inspect-overlay__subhead">{{ t('skills.inspect.suspiciousFiles') }}</p>
               <ul class="inspect-overlay__list">
                 <li v-for="file in report.suspiciousFiles" :key="file">{{ file }}</li>
-                <li v-if="!report.suspiciousFiles.length">No suspicious files detected.</li>
+                <li v-if="!report.suspiciousFiles.length">{{ t('skills.inspect.noSuspiciousFiles') }}</li>
               </ul>
             </div>
           </div>
         </section>
 
         <footer class="inspect-overlay__actions">
-          <AppButton variant="ghost" @click="emit('close')">Close</AppButton>
+          <AppButton variant="ghost" @click="emit('close')">{{ t('common.close') }}</AppButton>
         </footer>
       </section>
     </div>
@@ -145,6 +147,8 @@ useDialogA11y({
 .inspect-overlay__section {
   display: grid;
   gap: calc(var(--sp) * 0.75);
+  padding-top: calc(var(--sp) * 1);
+  border-top: 1px solid var(--border);
 }
 
 .inspect-overlay__section-title,
@@ -207,6 +211,16 @@ useDialogA11y({
 .inspect-overlay__actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.inspect-overlay-enter-active,
+.inspect-overlay-leave-active {
+  transition: opacity var(--speed-regular) var(--ease);
+}
+
+.inspect-overlay-enter-from,
+.inspect-overlay-leave-to {
+  opacity: 0;
 }
 
 @media (max-width: 720px) {

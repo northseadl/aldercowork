@@ -59,7 +59,7 @@ export function createKernel(): KernelContext {
             const { listen } = await import('@tauri-apps/api/event')
 
             const unsub1 = await listen<KernelInfo>('kernel-started', (event) => {
-                console.log('[kernel] engine started:', event.payload)
+                console.info('[kernel] engine started:', event.payload)
                 port.value = event.payload.port
                 status.value = 'running'
                 error.value = null

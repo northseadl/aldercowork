@@ -1,12 +1,11 @@
 import type {
   InstalledSkillRecord,
   MarketplaceSkillDetail,
-  MarketplaceSkillSummary,
   SkillRuntimeManifest,
   StagedSkillRecord,
 } from '@aldercowork/skill-schema'
 
-export type SkillActivationScope = 'global' | 'workspace'
+export type { SkillActivationScope } from '../../services/skill'
 export type SkillPermissionType = 'fs' | 'network' | 'shell'
 
 export interface NormalizedSkillPermission {
@@ -19,9 +18,6 @@ export type SkillDetailSelection =
   | { kind: 'installed'; skill: InstalledSkillRecord }
   | { kind: 'marketplace'; skill: MarketplaceSkillDetail }
   | { kind: 'staged'; skill: StagedSkillRecord }
-
-export type SkillPanelSkill = InstalledSkillRecord
-export type SkillMarketSkill = MarketplaceSkillSummary
 
 export function normalizePermissions(skill: Pick<SkillRuntimeManifest, 'permissions'>): NormalizedSkillPermission[] {
   const result: NormalizedSkillPermission[] = []
@@ -36,3 +32,4 @@ export function normalizePermissions(skill: Pick<SkillRuntimeManifest, 'permissi
   }
   return result
 }
+

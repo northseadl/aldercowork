@@ -58,6 +58,43 @@
     border: 0;
     white-space: nowrap;
   }
+
+  /* ── View Transition: Precision Tool ──
+     All transitions ≤ 200ms, pure translate + opacity, no spring bounce. */
+  ::view-transition-old(main-content) {
+    animation: vt-slide-out 150ms var(--ease) both;
+  }
+
+  ::view-transition-new(main-content) {
+    animation: vt-slide-in 150ms var(--ease) both;
+  }
+
+  @keyframes vt-slide-out {
+    to {
+      opacity: 0;
+      transform: translateX(-6px);
+    }
+  }
+
+  @keyframes vt-slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(6px);
+    }
+  }
+
+  /* ── Global: prefers-reduced-motion ── */
+  @media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 /* end @layer reset */

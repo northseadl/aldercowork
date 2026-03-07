@@ -60,7 +60,7 @@ const SNAPSHOT_IGNORED_DIRS = new Set([
   '.cache',
   'coverage',
 ])
-const PREVIEW_MAX_CHARS = 16_000
+
 const ARTIFACT_SETTLE_MS = 180
 const SOURCE_PRIORITY: Record<FileOutcomeSource, number> = {
   summary: 0,
@@ -81,16 +81,6 @@ function sleep(ms: number): Promise<void> {
 
 function isGitStatus(value: unknown): value is GitStatus {
   return value === 'added' || value === 'deleted' || value === 'modified'
-}
-
-function isTextMime(mime: string | undefined): boolean {
-  if (!mime) return false
-  return mime.startsWith('text/')
-    || mime.includes('json')
-    || mime.includes('xml')
-    || mime.includes('yaml')
-    || mime.includes('javascript')
-    || mime.includes('typescript')
 }
 
 function sourcePriority(source: FileOutcomeSource): number {
@@ -212,42 +202,6 @@ async function collectGitStatus(client: ClientRecord): Promise<{ available: bool
   }
 }
 
-async function readWorkspacePreview(
-  client: ClientRecord,
-  path: string,
-): Promise<{ after?: string; binary?: boolean; mimeType?: string; previewTruncated?: boolean } | null> {
-  const fileNs = asRecord(client.file)
-  if (typeof fileNs.read !== 'function') return null
-
-  try {
-    const response = await (fileNs.read as (opts: unknown) => Promise<unknown>)({ path })
-    const result = asRecord(response)
-    if (result.error) return null
-
-    const data = asRecord(result.data ?? response)
-    const type = asString(data.type)
-    const mimeType = asString(data.mimeType) ?? undefined
-
-    if (type === 'text') {
-      const content = asString(data.content) ?? ''
-      return {
-        after: content.slice(0, PREVIEW_MAX_CHARS),
-        binary: false,
-        mimeType,
-        previewTruncated: content.length > PREVIEW_MAX_CHARS,
-      }
-    }
-
-    return {
-      binary: true,
-      mimeType,
-      previewTruncated: false,
-    }
-  } catch {
-    return null
-  }
-}
-
 function parseSessionDiff(raw: unknown): FileDiffRecord[] {
   return extractArrayResponse<Record<string, unknown>>(raw)
     .map(parseFileDiffRecord)
@@ -284,11 +238,6 @@ function mergeOutcome(current: FileOutcome | undefined, incoming: FileOutcome): 
   return {
     ...fallback,
     ...dominant,
-    before: dominant.before ?? fallback.before,
-    after: dominant.after ?? fallback.after,
-    mimeType: dominant.mimeType ?? fallback.mimeType,
-    binary: dominant.binary ?? fallback.binary,
-    previewTruncated: dominant.previewTruncated ?? fallback.previewTruncated,
   }
 }
 
@@ -423,25 +372,6 @@ function diffPathSnapshots(
   return outcomes
 }
 
-async function enrichOutcomes(client: ClientRecord, files: FileOutcome[]): Promise<FileOutcome[]> {
-  const enriched = [...files]
-
-  for (let index = 0; index < enriched.length; index += 1) {
-    const current = enriched[index]
-    if (current.status === 'deleted' || current.before || current.after || current.binary) continue
-
-    const preview = await readWorkspacePreview(client, current.path)
-    if (!preview) continue
-
-    enriched[index] = {
-      ...current,
-      ...preview,
-    }
-  }
-
-  return enriched
-}
-
 export function parseFileDiffRecord(source: unknown): FileDiffRecord | null {
   const rec = asRecord(source)
   const file = asString(rec.file)
@@ -450,8 +380,6 @@ export function parseFileDiffRecord(source: unknown): FileDiffRecord | null {
   const status = rec.status
   return {
     file,
-    before: asString(rec.before) ?? '',
-    after: asString(rec.after) ?? '',
     additions: Number(rec.additions) || 0,
     deletions: Number(rec.deletions) || 0,
     status: isGitStatus(status) ? status : undefined,
@@ -483,8 +411,6 @@ export function createOutcomeFromDiff(
     status: normalizeOutcomeStatus(diff.status),
     additions: diff.additions,
     deletions: diff.deletions,
-    before: diff.before || undefined,
-    after: diff.after || undefined,
     messageId,
     turnId,
     live: source === 'live',
@@ -507,8 +433,6 @@ export function createOutcomeFromAttachment(file: FileInfo, turnId: string, mess
     live: false,
     source: 'attachment',
     updatedAt: nowISO(),
-    binary: !isTextMime(file.mime),
-    mimeType: file.mime,
   }
 }
 
@@ -559,7 +483,6 @@ export function buildSessionArtifactSummary(
       files: files.length,
       additions: files.reduce((sum, item) => sum + item.additions, 0),
       deletions: files.reduce((sum, item) => sum + item.deletions, 0),
-      touchedCount: touches.length,
     },
     error,
   }
@@ -647,12 +570,9 @@ export async function resolveTurnArtifacts(options: ResolveTurnArtifactsOptions)
     }
   }
 
-  const files = await enrichOutcomes(
-    options.client,
-    [...filesByPath.values()]
-      .map(finalizeOutcome)
-      .sort((a, b) => a.path.localeCompare(b.path)),
-  )
+  const files = [...filesByPath.values()]
+    .map(finalizeOutcome)
+    .sort((a, b) => a.path.localeCompare(b.path))
 
   return { files, warnings }
 }

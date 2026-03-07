@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { useI18n } from '../../i18n'
 import { getGlobalModel, setGlobalModel } from '../../services/kernelConfig'
-import { useProfileStore } from '../../stores/profile'
 
 const props = defineProps<{
   /** OpenCode SDK client instance (or null if kernel not ready) */
@@ -16,7 +15,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const profileStore = useProfileStore()
 
 // ---------------------------------------------------------------------------
 // Types
@@ -78,7 +76,7 @@ const availableVariants = computed<string[]>(() => {
 })
 
 const hasVariants = computed(() => availableVariants.value.length > 0)
-const modelLocked = computed(() => profileStore.modelLocked)
+
 
 // ---------------------------------------------------------------------------
 // Config I/O
@@ -89,7 +87,6 @@ async function loadCurrentModel() {
 }
 
 async function selectModel(providerID: string, modelID: string) {
-  if (modelLocked.value) return
   await setGlobalModel(providerID, modelID)
   currentModel.value = { providerID, modelID }
   // Reset variant when switching model (new model may have different variants)
@@ -165,7 +162,7 @@ async function fetchProviders() {
       })
 
     // Auto-select first available model if none set
-    if (!modelLocked.value && !currentModel.value && connectedProviders.value.length > 0) {
+    if (!currentModel.value && connectedProviders.value.length > 0) {
       const first = connectedProviders.value[0]
       const firstModel = first.models.find((m) => m.id === first.defaultModelId) ?? first.models[0]
       if (firstModel) {
@@ -184,7 +181,6 @@ async function fetchProviders() {
 // ---------------------------------------------------------------------------
 
 function togglePopover() {
-  if (modelLocked.value) return
   if (isOpen.value) {
     isOpen.value = false
     return
@@ -235,7 +231,6 @@ defineExpose({ currentVariant, currentModel })
         class="mp-pill"
         :class="{ 'is-open': isOpen }"
         :title="t('chat.modelPicker.title')"
-        :disabled="modelLocked"
         @click="togglePopover"
       >
         <svg class="mp-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -289,7 +284,6 @@ defineExpose({ currentVariant, currentModel })
               :key="model.id"
               type="button"
               class="mp-option"
-              :disabled="modelLocked"
               :class="{ 'is-selected': currentModel?.providerID === provider.id && currentModel?.modelID === model.id }"
               @click="selectModel(provider.id, model.id)"
             >

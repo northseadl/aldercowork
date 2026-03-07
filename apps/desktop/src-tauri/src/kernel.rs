@@ -35,7 +35,7 @@ pub struct KernelManager {
     port: Option<u16>,
     pid: Option<u32>,
     last_error: Option<String>,
-    kernel_state_dir: Option<String>,
+    engine_dir: Option<String>,
     /// Provider env vars persisted across restarts
     provider_env: Option<Vec<(String, String)>>,
 }
@@ -47,7 +47,7 @@ impl KernelManager {
             port: None,
             pid: None,
             last_error: None,
-            kernel_state_dir: None,
+            engine_dir: None,
             provider_env: None,
         }
     }
@@ -57,9 +57,9 @@ impl KernelManager {
         self.provider_env = Some(env);
     }
 
-    /// Set the OpenCode kernel state directory (injected via XDG_CONFIG_HOME + XDG_DATA_HOME)
-    pub fn set_kernel_state_dir(&mut self, dir: String) {
-        self.kernel_state_dir = Some(dir);
+    /// Set the OpenCode engine directory (injected via XDG_CONFIG_HOME + XDG_DATA_HOME)
+    pub fn set_engine_dir(&mut self, dir: String) {
+        self.engine_dir = Some(dir);
     }
 
     pub fn spawn_process(
@@ -96,14 +96,14 @@ impl KernelManager {
         // IMPORTANT: OpenCode does NOT respect OPENCODE_CONFIG_DIR.
         // It follows XDG spec on ALL platforms (including macOS).
         // We redirect both config and data via XDG env vars:
-        //   XDG_CONFIG_HOME → {kernel_state}/  →  config at {kernel_state}/opencode/config.json
-        //   XDG_DATA_HOME   → {kernel_state}/  →  DB at {kernel_state}/opencode/opencode.db
+        //   XDG_CONFIG_HOME → {engine}/  →  config at {engine}/opencode/config.json
+        //   XDG_DATA_HOME   → {engine}/  →  DB at {engine}/opencode/opencode.db
         //
         // This ensures AlderCowork's kernel never reads/writes ~/.config/opencode/
         // or ~/.local/share/opencode/, preserving the user's own OpenCode state.
-        if let Some(ref state_dir) = self.kernel_state_dir {
-            command = command.env("XDG_CONFIG_HOME", state_dir);
-            command = command.env("XDG_DATA_HOME", state_dir);
+        if let Some(ref engine_dir) = self.engine_dir {
+            command = command.env("XDG_CONFIG_HOME", engine_dir);
+            command = command.env("XDG_DATA_HOME", engine_dir);
         }
 
         // Tell OpenCode it's running inside a desktop client

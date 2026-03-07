@@ -92,18 +92,12 @@ export interface ProviderState {
     enabled: boolean
     hasKey: boolean
     baseUrl: string
-    /** Source of config — 'local' for standalone, 'hub' for enterprise */
-    source: 'local' | 'hub'
 }
 
 // ---------------------------------------------------------------------------
 // Persisted settings schema
 // ---------------------------------------------------------------------------
 
-export interface ModelSelection {
-    providerID: string
-    modelID: string
-}
 
 export interface WorkspacePersisted {
     id: string
@@ -132,13 +126,6 @@ const DEFAULTS: PersistedSettings = {
     activeWorkspaceId: null,
 }
 
-function parseModelSelection(v: unknown): ModelSelection | null {
-    if (typeof v !== 'object' || v === null) return null
-    const rec = v as Record<string, unknown>
-    const providerID = typeof rec.providerID === 'string' ? rec.providerID : ''
-    const modelID = typeof rec.modelID === 'string' ? rec.modelID : ''
-    return providerID && modelID ? { providerID, modelID } : null
-}
 
 function parseWorkspacePersisted(v: unknown): WorkspacePersisted | null {
     if (typeof v !== 'object' || v === null) return null
@@ -220,33 +207,6 @@ export const useSettingsStore = defineStore('settings', () => {
 
     // --- Init: load from file, with localStorage migration ---
 
-    function applyManagedProfileOverlay() {
-        const managed = profileStore.managedSettings
-        if (!managed) return
-
-        if (managed.defaultProvider) {
-            defaultProvider.value = managed.defaultProvider
-        }
-
-        if (Object.keys(managed.providerOverrides).length > 0) {
-            const nextStates = { ...providerStates.value }
-            for (const [providerId, overrideState] of Object.entries(managed.providerOverrides)) {
-                const current = nextStates[providerId] ?? {
-                    enabled: false,
-                    hasKey: false,
-                    baseUrl: '',
-                    source: 'local' as const,
-                }
-                nextStates[providerId] = {
-                    enabled: overrideState.enabled ?? current.enabled,
-                    hasKey: overrideState.hasKey ?? current.hasKey,
-                    baseUrl: overrideState.baseUrl ?? current.baseUrl,
-                    source: overrideState.source ?? 'hub',
-                }
-            }
-            providerStates.value = nextStates
-        }
-    }
 
     async function init() {
         loaded.value = false
@@ -267,7 +227,6 @@ export const useSettingsStore = defineStore('settings', () => {
             }
         }
 
-        applyManagedProfileOverlay()
         loaded.value = true
     }
 
@@ -315,7 +274,6 @@ export const useSettingsStore = defineStore('settings', () => {
                 enabled: state?.enabled ?? false,
                 hasKey: state?.hasKey ?? false,
                 baseUrl: state?.baseUrl ?? def.defaultBaseUrl ?? '',
-                source: state?.source ?? 'local',
             }
         })
     })
@@ -347,19 +305,15 @@ export const useSettingsStore = defineStore('settings', () => {
     const defaultProviderDef = computed(() =>
         getProviderDef(defaultProvider.value) ?? BUILTIN_PROVIDERS[0],
     )
-    const providersLocked = computed(() => profileStore.isSectionLocked('providers'))
-    const workspaceLocked = computed(() => profileStore.isSectionLocked('workspace'))
-    const modelLocked = computed(() => profileStore.isSectionLocked('model'))
+
 
     // --- Mutations ---
 
     function updateProviderState(id: string, patch: Partial<Omit<ProviderState, 'id'>>) {
-        if (providersLocked.value) return
         const current = providerStates.value[id] ?? {
             enabled: false,
             hasKey: false,
             baseUrl: '',
-            source: 'local' as const,
         }
         providerStates.value = {
             ...providerStates.value,
@@ -368,17 +322,14 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     function markProviderKey(id: string, hasKey: boolean) {
-        if (providersLocked.value) return
         updateProviderState(id, { hasKey, enabled: hasKey })
     }
 
     function setProviderBaseUrl(id: string, baseUrl: string) {
-        if (providersLocked.value) return
         updateProviderState(id, { baseUrl })
     }
 
     function setDefaultProvider(id: string) {
-        if (providersLocked.value) return
         defaultProvider.value = id
     }
 
@@ -387,7 +338,6 @@ export const useSettingsStore = defineStore('settings', () => {
     }
 
     function setWorkspaceState(workspaces: WorkspacePersisted[], activeId: string | null) {
-        if (workspaceLocked.value) return
         recentWorkspaces.value = workspaces
         activeWorkspaceId.value = activeId
     }
@@ -423,9 +373,7 @@ export const useSettingsStore = defineStore('settings', () => {
         cnProviders,
         activeProviders,
         defaultProviderDef,
-        providersLocked,
-        workspaceLocked,
-        modelLocked,
+
 
         // Actions
         init,

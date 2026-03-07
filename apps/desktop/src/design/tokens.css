@@ -14,10 +14,14 @@
       --text-small: .875rem;
       --text-regular: .9375rem;
       --text-large: 1.0625rem;
+      --text-subheading: 1rem;
+      --text-heading: 1.25rem;
+      --text-display: 1.75rem;
 
       --ls-tight: -0.015em;
       --ls-normal: -0.011em;
       --ls-title: -0.022em;
+      --ls-display: -0.025em;
 
       --lh-tight: 1.33;
       --lh-normal: 1.5;
@@ -35,14 +39,17 @@
 
       --sp: 8px;
 
-      /* Motion */
+      /* Motion — Precision Tool: all ≤ 200ms, no spring easing */
       --speed-quick: .1s;
-      --speed-regular: .25s;
+      --speed-precision: .15s;
+      --speed-regular: .2s;
       --ease: cubic-bezier(.4, 0, .2, 1);
 
       /* Layout */
       --sidebar-w: 240px;
       --header-h: 48px;
+      --traffic-light-offset: 72px;
+      /* macOS window controls reserved area */
    }
 
    /* ═══ DARK Theme ═══
@@ -79,7 +86,7 @@
 
       --border: rgba(255, 255, 255, .06);
       --border-subtle: rgba(255, 255, 255, .03);
-      --shadow-content: -1px 0 0 rgba(255, 255, 255, .04), 0 -1px 0 rgba(255, 255, 255, .03);
+      --shadow-content: -1px 0 0 rgba(255, 255, 255, .04), 0 -1px 0 rgba(255, 255, 255, .03), inset 0 0.5px 0 rgba(255, 255, 255, .03);
       --shadow-card: 0 1px 3px rgba(0, 0, 0, .15), 0 4px 12px rgba(0, 0, 0, .1);
       --shadow-xl: 0 8px 30px rgba(0, 0, 0, .35), 0 2px 8px rgba(0, 0, 0, .2);
       --shadow-inset: inset 0 1px 3px rgba(0, 0, 0, .2);
@@ -88,7 +95,7 @@
       --syntax-function: #6eb8cc;
       --syntax-number: #b07cd8;
       --syntax-literal: #e78a64;
-      --noise-opacity: .012;
+      --noise-opacity: .018;
 
       --on-brand: #fff;
 
@@ -137,7 +144,7 @@
 
       --border: rgba(0, 0, 0, .06);
       --border-subtle: rgba(0, 0, 0, .03);
-      --shadow-content: -1px 0 0 rgba(0, 0, 0, .04), 0 -1px 0 rgba(0, 0, 0, .03);
+      --shadow-content: -1px 0 0 rgba(0, 0, 0, .04), 0 -1px 0 rgba(0, 0, 0, .03), inset 0 0.5px 0 rgba(255, 255, 255, .5);
       --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 4px 12px rgba(0, 0, 0, .03);
       --shadow-xl: 0 8px 30px rgba(0, 0, 0, .12), 0 2px 8px rgba(0, 0, 0, .06);
       --shadow-inset: inset 0 1px 2px rgba(0, 0, 0, .06);
@@ -146,7 +153,7 @@
       --syntax-function: #2b6cb0;
       --syntax-number: #7c3aed;
       --syntax-literal: #c2410c;
-      --noise-opacity: .018;
+      --noise-opacity: .025;
 
       --on-brand: #fff;
 

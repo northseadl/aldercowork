@@ -10,8 +10,6 @@ use tokio::sync::Mutex;
 use tokio::time::{timeout, Duration};
 use walkdir::WalkDir;
 
-const OPEN_SOURCE_CATALOG: &str =
-    include_str!("../resources/marketplace/open-source-catalog.json");
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -371,11 +369,11 @@ fn default_manifest(id: &str) -> SkillRuntimeManifest {
 // ---------------------------------------------------------------------------
 
 fn staging_root(app: &tauri::AppHandle) -> PathBuf {
-    PathBuf::from(resolve_data_paths(app).skill_staging)
+    PathBuf::from(resolve_data_paths(app).skill_staging_dir)
 }
 
 fn audit_root(app: &tauri::AppHandle) -> PathBuf {
-    PathBuf::from(resolve_data_paths(app).skill_audit_reports)
+    PathBuf::from(resolve_data_paths(app).audit_reports_dir)
 }
 
 fn now_iso() -> String {
@@ -963,9 +961,7 @@ async fn load_catalog(
     provider: &MarketplaceProviderConfig,
 ) -> Result<(String, Vec<SkillCatalogManifest>), String> {
     let source_label = provider.label.clone();
-    let raw = if provider.source == "open-source" && provider.catalog_url.as_deref().unwrap_or("").is_empty() {
-        OPEN_SOURCE_CATALOG.to_string()
-    } else {
+    let raw = {
         let url = provider
             .catalog_url
             .clone()
@@ -1268,10 +1264,7 @@ fn activation_flags_for(
     workspace_path: &Option<String>,
 ) -> SkillActivationFlags {
     let leaf = skill_leaf_name(skill_id);
-    let global_dir = PathBuf::from(&data_paths.kernel_state)
-        .join("opencode")
-        .join(".agents")
-        .join("skills");
+    let global_dir = PathBuf::from(&data_paths.engine_skills_dir);
     let ws_dir = workspace_path
         .as_ref()
         .map(|ws| PathBuf::from(ws).join(".agents").join("skills"));
@@ -1447,7 +1440,7 @@ async fn activate_skill_impl(
     let data_paths = resolve_data_paths(app);
     validate_skill_id(skill_id)?;
 
-    let skills_root = PathBuf::from(&data_paths.skills);
+    let skills_root = PathBuf::from(&data_paths.skills_dir);
     let source = skills_root.join(skill_id);
     if !source.is_dir() {
         return Err(format!("Skill not found: {skill_id}"));
@@ -1464,10 +1457,7 @@ async fn activate_skill_impl(
     let leaf = skill_leaf_name(skill_id);
     let link_path = match scope {
         "global" => {
-            let dir = PathBuf::from(&data_paths.kernel_state)
-                .join("opencode")
-                .join(".agents")
-                .join("skills");
+            let dir = PathBuf::from(&data_paths.engine_skills_dir);
             let _ = std::fs::create_dir_all(&dir);
             dir.join(leaf)
         }
@@ -1510,11 +1500,7 @@ async fn deactivate_skill_impl(
     let leaf = skill_leaf_name(skill_id);
 
     let link_path = match scope {
-        "global" => PathBuf::from(&data_paths.kernel_state)
-            .join("opencode")
-            .join(".agents")
-            .join("skills")
-            .join(leaf),
+        "global" => PathBuf::from(&data_paths.engine_skills_dir).join(leaf),
         "workspace" => {
             let ws = workspace_path
                 .clone()
@@ -1542,7 +1528,7 @@ async fn deactivate_skill_impl(
 #[tauri::command]
 pub async fn list_skill_dirs(app: tauri::AppHandle) -> Result<Vec<SkillDirEntry>, String> {
     let paths = resolve_data_paths(&app);
-    let skills_dir = PathBuf::from(&paths.skills);
+    let skills_dir = PathBuf::from(&paths.skills_dir);
     if !skills_dir.exists() {
         return Ok(vec![]);
     }
@@ -1559,7 +1545,7 @@ pub async fn read_skill_file(
     relative_path: String,
 ) -> Result<String, String> {
     let paths = resolve_data_paths(&app);
-    let skills_root = PathBuf::from(&paths.skills);
+    let skills_root = PathBuf::from(&paths.skills_dir);
     validate_skill_id(&skill_id)?;
 
     let safe_relative = crate::sanitize_relative_path(&relative_path)?;
@@ -1582,7 +1568,7 @@ pub async fn read_skill_file(
 #[tauri::command]
 pub async fn remove_skill(app: tauri::AppHandle, skill_id: String) -> Result<(), String> {
     let paths = resolve_data_paths(&app);
-    let skills_root = PathBuf::from(&paths.skills);
+    let skills_root = PathBuf::from(&paths.skills_dir);
     validate_skill_id(&skill_id)?;
 
     let skill_dir = skills_root.join(&skill_id);
@@ -1851,7 +1837,7 @@ pub async fn approve_staged_skill_install(
     }
 
     let data_paths = resolve_data_paths(&app);
-    let skills_root = PathBuf::from(&data_paths.skills);
+    let skills_root = PathBuf::from(&data_paths.skills_dir);
     let target = skills_root.join(&parsed.manifest.id);
     if target.exists() {
         std::fs::remove_dir_all(&target).map_err(|e| format!("Failed to replace skill: {e}"))?;
@@ -1900,7 +1886,7 @@ pub async fn list_installed_skills_with_state(
     workspace_path: Option<String>,
 ) -> Result<Vec<InstalledSkillRecord>, String> {
     let paths = resolve_data_paths(&app);
-    let skills_root = PathBuf::from(&paths.skills);
+    let skills_root = PathBuf::from(&paths.skills_dir);
     if !skills_root.exists() {
         return Ok(vec![]);
     }
@@ -2028,14 +2014,11 @@ pub async fn get_skill_activations(
     workspace_path: Option<String>,
 ) -> Result<Vec<SkillActivation>, String> {
     let data_paths = resolve_data_paths(&app);
-    let skills_root = PathBuf::from(&data_paths.skills);
+    let skills_root = PathBuf::from(&data_paths.skills_dir);
     let mut all_skills = vec![];
     collect_installed_skills(&skills_root, &skills_root, &mut all_skills);
 
-    let global_dir = PathBuf::from(&data_paths.kernel_state)
-        .join("opencode")
-        .join(".agents")
-        .join("skills");
+    let global_dir = PathBuf::from(&data_paths.engine_skills_dir);
     let ws_dir = workspace_path.map(|ws| PathBuf::from(ws).join(".agents").join("skills"));
 
     Ok(all_skills
@@ -2054,8 +2037,11 @@ pub async fn get_skill_activations(
 mod tests {
     use super::*;
 
+    const TEST_CATALOG: &str =
+        include_str!("../resources/marketplace/open-source-catalog.json");
+
     fn seeded_catalog() -> Vec<SkillCatalogManifest> {
-        serde_json::from_str::<CatalogEnvelope>(OPEN_SOURCE_CATALOG)
+        serde_json::from_str::<CatalogEnvelope>(TEST_CATALOG)
             .expect("catalog should parse")
             .items
     }

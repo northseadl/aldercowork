@@ -51,3 +51,4 @@
 - **Text-gated state repair**: 用“是否已有文本内容”决定是否跳过整条消息的最终 reconcile，会让 tool/file/patch 等非文本 part 失去最终态修正机会；应按 part 类型与 id 做选择性 merge。
 - **Late-bound tenant writes**: 在多租户/多 profile 应用里，如果持久化目标在“写入时”才按 active tenant 解析，而前端又有 debounce/异步 reload，旧租户的延迟写入会污染新租户；必须在上下文切换时取消 pending writes，并在 reload 前先把内存状态重置为 tenant-local 基线。
 - **Hot-swapped store API drift**: 在 HMR/热更新环境里，旧的状态容器实例不一定立即获得新 action；app 层 orchestration 直接调用新增方法会出现 `x is not a function`。对关键切换链路应优先调用稳定基元，或做 feature-detect fallback。
+- **Pinia-proxied SDK instance**: 将依赖 `this` 绑定的 SDK class 实例存入 Pinia store 的 `shallowRef` 后，外部通过 `store.prop` 读取时 Pinia 的 `reactive()` 会自动解包 shallowRef 但可能对嵌套属性访问产生中间 proxy，导致 destructured method call 丢失 `this`（`'undefined is not an object (evaluating this.client)'`）；应通过独立 `ref()`/`useClient()` 持有原始实例，store 仅用于 null/非 null 判断和简单 CRUD。

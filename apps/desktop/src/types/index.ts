@@ -1,5 +1,5 @@
 import type { ChatThreadMessage } from '../components/chat'
-import type { SkillPanelSkill } from '../components/skills'
+
 
 export type AppNavId = 'sessions' | 'skills' | 'runbooks' | 'settings'
 
@@ -26,7 +26,7 @@ export interface RuntimeErrorDetail {
   timestamp: string
 }
 
-export type { ChatThreadMessage, SkillPanelSkill }
+export type { ChatThreadMessage }
 export type { SessionSummary, RichMessage } from '../stores/session'
 export type {
   FileDiffRecord,

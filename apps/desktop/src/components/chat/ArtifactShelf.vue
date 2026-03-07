@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import FileOutcomeCard from './parts/FileOutcomeCard.vue'
 
@@ -12,26 +12,39 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
+const expanded = ref(false)
 
 const hasContent = computed(() => props.summary.files.length > 0 || !!props.summary.error)
+
+const summaryText = computed(() =>
+  t('chat.artifacts.shelfSummary')
+    .replace('{files}', String(props.summary.totals.files))
+    .replace('{additions}', String(props.summary.totals.additions))
+    .replace('{deletions}', String(props.summary.totals.deletions)),
+)
 </script>
 
 <template>
   <section v-if="hasContent" class="artifact-shelf" :aria-label="t('chat.artifacts.shelfTitle')">
-    <header class="artifact-shelf__head">
-      <div>
-        <h3 class="artifact-shelf__title">{{ t('chat.artifacts.shelfTitle') }}</h3>
-        <p class="artifact-shelf__meta">
-          {{
-            t('chat.artifacts.shelfSummary')
-              .replace('{files}', String(props.summary.totals.files))
-              .replace('{touches}', String(props.summary.totals.touchedCount))
-              .replace('{additions}', String(props.summary.totals.additions))
-              .replace('{deletions}', String(props.summary.totals.deletions))
-          }}
-        </p>
-      </div>
-    </header>
+    <button
+      type="button"
+      class="artifact-shelf__toggle"
+      :aria-expanded="expanded ? 'true' : 'false'"
+      @click="expanded = !expanded"
+    >
+      <svg
+        class="artifact-shelf__chevron"
+        :class="{ 'is-expanded': expanded }"
+        width="14" height="14" viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" stroke-width="2.5"
+        stroke-linecap="round" stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+      <span class="artifact-shelf__title">{{ t('chat.artifacts.shelfTitle') }}</span>
+      <span class="artifact-shelf__meta">{{ summaryText }}</span>
+    </button>
 
     <div v-if="props.summary.error" class="artifact-shelf__error" role="status">
       <svg class="artifact-shelf__error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -42,12 +55,11 @@ const hasContent = computed(() => props.summary.files.length > 0 || !!props.summ
       <span>{{ t('chat.artifacts.aggregateError') }}: {{ props.summary.error }}</span>
     </div>
 
-    <div v-if="props.summary.files.length > 0" class="artifact-shelf__list">
+    <div v-if="expanded && props.summary.files.length > 0" class="artifact-shelf__list">
       <FileOutcomeCard
         v-for="file in props.summary.files"
         :key="`session:${file.path}`"
         :file="file"
-        context="session"
       />
     </div>
   </section>
@@ -56,40 +68,53 @@ const hasContent = computed(() => props.summary.files.length > 0 || !!props.summ
 <style scoped>
 .artifact-shelf {
   margin-top: calc(var(--sp) * 3);
-  padding: calc(var(--sp) * 2);
-  border-radius: var(--r-xl);
-  background: color-mix(in srgb, var(--surface-card) 92%, var(--content));
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-card);
 }
 
-.artifact-shelf__head {
+.artifact-shelf__toggle {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: calc(var(--sp) * 1.5);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface-card) 92%, var(--content));
+  cursor: pointer;
+  transition: background var(--speed-quick);
+}
+
+.artifact-shelf__toggle:hover {
+  background: var(--surface-hover);
+}
+
+.artifact-shelf__chevron {
+  flex-shrink: 0;
+  color: var(--text-3);
+  transition: transform var(--speed-quick);
+}
+.artifact-shelf__chevron.is-expanded {
+  transform: rotate(90deg);
 }
 
 .artifact-shelf__title {
-  margin: 0;
   font-size: var(--text-small);
   font-weight: var(--fw-semibold);
   color: var(--text-1);
 }
 
 .artifact-shelf__meta {
-  margin: 4px 0 0;
   font-size: var(--text-micro);
   color: var(--text-3);
+  margin-left: auto;
+  font-family: var(--font-mono);
 }
 
 .artifact-shelf__error {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
-  margin-bottom: calc(var(--sp) * 1.5);
+  padding: 8px 12px;
+  margin-top: calc(var(--sp) * 1);
   border-radius: var(--r-md);
   color: var(--color-warning);
   background: var(--color-warning-subtle);
@@ -106,6 +131,12 @@ const hasContent = computed(() => props.summary.files.length > 0 || !!props.summ
 .artifact-shelf__list {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--sp) * 1.25);
+  margin-top: calc(var(--sp) * 0.5);
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface-card) 92%, var(--content));
+  max-height: 320px;
+  overflow-y: auto;
 }
 </style>

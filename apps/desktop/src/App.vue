@@ -10,7 +10,7 @@ import { AppContent, AppHeader, AppShell, AppSidebar } from './components/layout
 import { AppToast, CommandPalette, ConfirmDialog, PermissionDialog } from './components/ui'
 import { useI18n } from './i18n'
 import { createKernel, KERNEL_KEY } from './composables/useKernel'
-import { useDataPaths, useKeyboard, useToast, installCopyDelegate } from './composables'
+import { useClient, useDataPaths, useKeyboard, useToast, installCopyDelegate } from './composables'
 import { useAppStore } from './stores/app'
 import { useInstalledSkillStore } from './stores/installedSkill'
 import { useMarketplaceSkillStore } from './stores/marketplaceSkill'
@@ -184,6 +184,11 @@ const kernel = createKernel()
 provide(KERNEL_KEY, kernel)
 const { status: kernelStatus, version: kernelVersion, error: kernelError } = kernel
 
+// Global SDK client — created at App level so all views (Chat, Runbooks, etc.) can use it.
+// Previously this was buried inside ChatView, making sessionStore.client null on other routes.
+const { client: globalSdkClient } = useClient(kernel.port, computed(() => workspaceStore.activePath))
+watch(globalSdkClient, (c) => sessionStore.setClient(c), { immediate: true })
+
 // Welcome screen — shown on first launch only.
 // Must wait for settings to load from disk before deciding.
 const welcomeDismissed = ref(false)
@@ -233,7 +238,7 @@ watch(settingsLoaded, (loaded) => {
   if (loaded && !initialSettingsSynced) {
     initialSettingsSynced = true
     // Config was already written by useCredentialStore on load — no restart needed
-    console.log('[App] Settings loaded, kernel config will apply on next restart')
+    console.info('[App] Settings loaded, kernel config will apply on next restart')
   }
 }, { immediate: true })
 
@@ -275,7 +280,7 @@ watch(
     providerChangeDebounce = setTimeout(async () => {
       if (kernelStatus.value !== 'running' && kernelStatus.value !== 'starting') return
       try {
-        console.log('[App] Provider settings changed, restarting kernel to reload config')
+        console.info('[App] Provider settings changed, restarting kernel to reload config')
         await kernel.restart()
       } catch (error) {
         console.warn('[App] Failed to restart kernel after provider change:', error)
@@ -360,7 +365,7 @@ const handleSelectSession = (id: string) => {
 
 const handleDeleteSession = async (id: string) => {
   await sessionStore.deleteSession(id)
-  toast.info('Session deleted')
+  toast.info(t('nav.sessionDeleted'))
 }
 
 const handleCreateSession = async () => {
@@ -490,8 +495,10 @@ const showCommandPalette = ref(false)
 
 .app-runtime-error__title {
   margin: 0;
-  font: var(--fw-semibold) 1.4rem / var(--lh-tight) var(--font);
+  font: var(--fw-semibold) var(--text-heading) / var(--lh-tight) var(--font);
+  letter-spacing: var(--ls-title);
   color: var(--text-1);
+  text-wrap: balance;
 }
 
 .app-runtime-error__message {

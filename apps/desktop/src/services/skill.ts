@@ -58,36 +58,43 @@ function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/$/, '')}/${path.replace(/^\//, '')}`
 }
 
-async function resolveProviderConfig(): Promise<MarketplaceProviderConfig> {
+async function resolveProviderConfig(): Promise<MarketplaceProviderConfig | null> {
   const activeProfile = await getActiveProfile().catch(() => null)
 
   if (activeProfile?.kind === 'enterprise') {
     const enterprise = activeProfile.enterprise
     const authToken = await getHubToken().catch(() => null)
+    const catalogUrl = enterprise?.hubUrl
+      ? joinUrl(
+        enterprise.hubUrl,
+        MARKETPLACE_BUILD_CONFIG.enterpriseCatalogPath,
+      )
+      : undefined
+    // No catalog URL = no marketplace
+    if (!catalogUrl) return null
     return {
       source: 'enterprise',
       label: enterprise?.organizationName
         ? `${enterprise.organizationName} Hub`
         : 'Enterprise Hub',
-      catalogUrl: enterprise?.hubUrl
-        ? joinUrl(
-          enterprise.hubUrl,
-          enterprise.catalogPath || MARKETPLACE_BUILD_CONFIG.enterpriseCatalogPath,
-        )
-        : undefined,
+      catalogUrl,
       authToken: authToken || undefined,
     }
   }
 
+  // Standalone mode — only if a real catalog URL is configured
+  const openSourceUrl = MARKETPLACE_BUILD_CONFIG.openSourceCatalogUrl
+  if (!openSourceUrl) return null
+
   return {
     source: 'open-source',
     label: 'Open Skill Market',
-    catalogUrl: MARKETPLACE_BUILD_CONFIG.openSourceCatalogUrl || undefined,
+    catalogUrl: openSourceUrl,
   }
 }
 
 class TauriMarketplaceProvider implements SkillMarketplaceProvider {
-  constructor(private readonly config: MarketplaceProviderConfig) {}
+  constructor(private readonly config: MarketplaceProviderConfig) { }
 
   get source() {
     return this.config.source
@@ -149,8 +156,31 @@ class TauriMarketplaceProvider implements SkillMarketplaceProvider {
   }
 }
 
+/** Returns empty results when no marketplace is configured */
+class NullMarketplaceProvider implements SkillMarketplaceProvider {
+  source = 'open-source' as const
+  label = ''
+  async search(): Promise<MarketplaceSearchResult> {
+    return { items: [], nextCursor: null, sourceLabel: '' }
+  }
+  async getSkill(): Promise<SkillCatalogManifest> {
+    throw new Error('No marketplace configured')
+  }
+  async download(): Promise<StagedSkillRecord> {
+    throw new Error('No marketplace configured')
+  }
+  async getLatestVersions(): Promise<Map<string, SkillUpdateState>> {
+    return new Map()
+  }
+  async update(): Promise<StagedSkillRecord> {
+    throw new Error('No marketplace configured')
+  }
+}
+
 export async function getMarketplaceProvider(): Promise<SkillMarketplaceProvider> {
-  return new TauriMarketplaceProvider(await resolveProviderConfig())
+  const config = await resolveProviderConfig()
+  if (!config) return new NullMarketplaceProvider()
+  return new TauriMarketplaceProvider(config)
 }
 
 export async function listInstalledSkills(workspacePath?: string): Promise<InstalledSkillRecord[]> {

@@ -26,7 +26,6 @@ const { t } = useI18n()
         v-for="file in props.summary.files"
         :key="`${props.summary.turnId}:${file.path}`"
         :file="file"
-        context="turn"
       />
     </div>
   </section>
@@ -44,7 +43,7 @@ const { t } = useI18n()
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: calc(var(--sp) * 1.25);
+  margin-bottom: calc(var(--sp) * 0.5);
 }
 
 .artifact-band__title,
@@ -66,6 +65,5 @@ const { t } = useI18n()
 .artifact-band__list {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--sp) * 1);
 }
 </style>

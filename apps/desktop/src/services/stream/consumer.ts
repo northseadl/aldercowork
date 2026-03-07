@@ -93,8 +93,20 @@ export async function consumeEventStream(
         }
 
         // --- Session error ---
+        // Engine publishes session.error when the agent loop encounters an
+        // unretryable error (e.g. InvalidToolInputError → message.error is set
+        // → process() returns "stop"). Rather than crashing the entire SSE
+        // consumer with a throw, we surface the error as a visible text part
+        // and let the stream continue until session.idle arrives naturally.
+        // This way the user can still see prior tool results and the error
+        // message, instead of a hard crash.
         if (type === 'session.error') {
-            throw new Error(extractSessionError(props))
+            const errMsg = extractSessionError(props)
+            const errPart = findOrCreatePart(aiMsg, state, `session-error-${Date.now()}`, 'text')
+            errPart.text = `⚠️ ${errMsg}`
+            state.sawActivity = true
+            await commit()
+            continue
         }
 
         if (type === 'file.edited') {
@@ -152,7 +164,16 @@ export async function consumeEventStream(
             aiMsg.createdAt = parseTimestamp(asRecord(info.time).created)
 
             const assistantError = extractAssistantError(info)
-            if (assistantError) throw new Error(assistantError)
+            if (assistantError) {
+                // Surface the assistant-level error as a visible text part
+                // instead of killing the SSE consumer. The session will reach
+                // idle status naturally and the agent loop is already done.
+                const errPart = findOrCreatePart(aiMsg, state, `msg-error-${Date.now()}`, 'text')
+                errPart.text = `⚠️ ${assistantError}`
+                state.sawActivity = true
+                await commit()
+                // Don't throw — let the stream continue to session.idle
+            }
 
             state.sawActivity = true
             await commit()

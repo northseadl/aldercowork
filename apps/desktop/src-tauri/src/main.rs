@@ -41,19 +41,27 @@ static DATA_FILE_WRITE_LOCK: StdMutex<()> = StdMutex::new(());
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DataPaths {
-    pub data: String,
-    pub config: String,
-    pub cache: String,
-    pub logs: String,
-    pub kernels: String,
-    pub skills: String,
-    pub skill_staging: String,
-    pub skill_audit_reports: String,
-    pub kernel_state: String,
-    pub workspace: String,
+    /// Profile identity
     pub profile_id: String,
     pub profile_kind: String,
     pub profile_label: String,
+
+    /// Config layer — user intent (settings, credentials)
+    pub config_dir: String,
+    pub credentials_dir: String,
+
+    /// Skills layer — installed skill sources (JetBrains plugins equivalent)
+    pub skills_dir: String,
+    pub skill_staging_dir: String,
+    pub audit_reports_dir: String,
+
+    /// Engine layer — OpenCode runtime (XDG isolation target)
+    pub engine_dir: String,
+    pub engine_config_dir: String,
+    pub engine_skills_dir: String,
+
+    /// Workspace
+    pub workspace_dir: String,
 }
 
 pub fn resolve_data_paths(app: &tauri::AppHandle) -> DataPaths {
@@ -236,50 +244,43 @@ fn ensure_active_profile_environment(app: &tauri::AppHandle) -> Result<DataPaths
     let active_profile = profile::get_active_profile(app)?;
     let data_paths = profile::resolve_profile_data_paths(app, &active_profile);
 
-    let dirs_to_create = [
-        &data_paths.data,
-        &data_paths.config,
-        &data_paths.cache,
-        &data_paths.logs,
-        &data_paths.kernels,
-        &data_paths.skills,
-        &data_paths.skill_staging,
-        &data_paths.skill_audit_reports,
-        &data_paths.kernel_state,
-        &data_paths.workspace,
-    ];
-    for dir in dirs_to_create {
+    // --- Phase 1: Create directory structure ---
+    for dir in [
+        &data_paths.config_dir,
+        &data_paths.credentials_dir,
+        &data_paths.skills_dir,
+        &data_paths.skill_staging_dir,
+        &data_paths.audit_reports_dir,
+        &data_paths.engine_config_dir,
+        &data_paths.engine_skills_dir,
+        &data_paths.workspace_dir,
+    ] {
         std::fs::create_dir_all(dir)
-            .map_err(|e| format!("Failed to create profile dir {dir}: {e}"))?;
+            .map_err(|e| format!("Failed to create dir {dir}: {e}"))?;
     }
 
-    let opencode_dir = PathBuf::from(&data_paths.kernel_state).join("opencode");
-    std::fs::create_dir_all(&opencode_dir)
-        .map_err(|e| format!("Failed to create opencode config dir: {e}"))?;
-
+    // --- Phase 2: Deploy prompt ---
+    let opencode_dir = PathBuf::from(&data_paths.engine_config_dir);
     let prompts_dir = opencode_dir.join("prompts");
     std::fs::create_dir_all(&prompts_dir)
         .map_err(|e| format!("Failed to create prompts dir: {e}"))?;
-    let prompt_src = app.path().resolve(
-        "resources/prompts/aldercowork.txt",
-        tauri::path::BaseDirectory::Resource,
-    );
-    match prompt_src {
+
+    let prompt_dest = prompts_dir.join("aldercowork.txt");
+    match app.path().resolve("resources/prompts/aldercowork.txt", tauri::path::BaseDirectory::Resource) {
         Ok(src) if src.exists() => {
-            let dest = prompts_dir.join("aldercowork.txt");
-            std::fs::copy(&src, &dest)
-                .map_err(|e| format!("Failed to deploy prompt file: {e}"))?;
+            std::fs::copy(&src, &prompt_dest)
+                .map_err(|e| format!("Failed to deploy prompt: {e}"))?;
         }
         _ => {
-            let dest = prompts_dir.join("aldercowork.txt");
-            if !dest.exists() {
+            if !prompt_dest.exists() {
                 let fallback = include_str!("../resources/prompts/aldercowork.txt");
-                std::fs::write(&dest, fallback)
+                std::fs::write(&prompt_dest, fallback)
                     .map_err(|e| format!("Failed to write fallback prompt: {e}"))?;
             }
         }
     }
 
+    // --- Phase 3: Initialize engine config ---
     let config_path = opencode_dir.join("config.json");
     let mut config: serde_json::Value = if config_path.exists() {
         let raw = std::fs::read_to_string(&config_path).unwrap_or_default();
@@ -294,64 +295,43 @@ fn ensure_active_profile_environment(app: &tauri::AppHandle) -> Result<DataPaths
 
     let obj = config
         .as_object_mut()
-        .ok_or_else(|| "Kernel config should be an object".to_string())?;
+        .ok_or_else(|| "Engine config must be a JSON object".to_string())?;
+
     obj.entry("$schema")
         .or_insert(serde_json::json!("https://opencode.ai/config.json"));
 
+    // Inject AlderCowork agent identity
     {
-        let agent = obj
-            .entry("agent")
-            .or_insert(serde_json::json!({}))
-            .as_object_mut();
+        let agent = obj.entry("agent").or_insert(serde_json::json!({})).as_object_mut();
         if let Some(agent_obj) = agent {
-            let build = agent_obj
-                .entry("build")
-                .or_insert(serde_json::json!({}))
-                .as_object_mut();
+            let build = agent_obj.entry("build").or_insert(serde_json::json!({})).as_object_mut();
             if let Some(build_obj) = build {
                 build_obj.insert(
-                    "description".to_string(),
+                    "description".into(),
                     serde_json::json!("AlderCowork — versatile AI assistant for research, writing, analysis, and general tasks"),
                 );
                 build_obj.insert(
-                    "prompt".to_string(),
+                    "prompt".into(),
                     serde_json::json!("{file:./prompts/aldercowork.txt}"),
                 );
             }
         }
     }
 
+    // Register skills discovery path
     obj.remove("_aldercowork_skills");
-
     {
-        let skills_dir = opencode_dir
-            .join(".agents")
-            .join("skills")
-            .to_string_lossy()
-            .into_owned();
-        let skills = obj
-            .entry("skills")
-            .or_insert(serde_json::json!({}))
-            .as_object_mut();
+        let skills = obj.entry("skills").or_insert(serde_json::json!({})).as_object_mut();
         if let Some(skills_obj) = skills {
-            skills_obj.insert("paths".to_string(), serde_json::json!([skills_dir]));
+            skills_obj.insert("paths".into(), serde_json::json!([&data_paths.engine_skills_dir]));
         }
     }
 
-    profile::apply_managed_settings_to_kernel_config(app, &mut config)?;
 
     if let Ok(json_str) = serde_json::to_string_pretty(&config) {
         atomic_write_secure(&config_path, json_str.as_bytes())
-            .map_err(|e| format!("Failed to write config.json: {e}"))?;
+            .map_err(|e| format!("Failed to write engine config: {e}"))?;
     }
-
-    let kernel_agents_dir = opencode_dir.join(".agents");
-    let kernel_skills_dir = kernel_agents_dir.join("skills");
-    if kernel_skills_dir.is_symlink() {
-        let _ = std::fs::remove_file(&kernel_skills_dir);
-    }
-    std::fs::create_dir_all(&kernel_skills_dir)
-        .map_err(|e| format!("Failed to create kernel skills dir: {e}"))?;
 
     profile::sync_profile_settings_file(app, &active_profile)?;
 
@@ -366,7 +346,7 @@ async fn start_kernel_runtime(
     let data_paths = ensure_active_profile_environment(app)?;
     {
         let mut mgr = state.lock().await;
-        mgr.set_kernel_state_dir(data_paths.kernel_state.clone());
+        mgr.set_engine_dir(data_paths.engine_dir.clone());
     }
 
     let info = {
@@ -418,14 +398,14 @@ async fn start_kernel(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<Mutex<KernelManager>>>,
 ) -> Result<kernel::KernelInfo, String> {
-    let kernel_state = state.inner().clone();
-    start_kernel_runtime(&app, &kernel_state, None).await
+    let kernel_mgr = state.inner().clone();
+    start_kernel_runtime(&app, &kernel_mgr, None).await
 }
 
 #[tauri::command]
 async fn stop_kernel(state: tauri::State<'_, Arc<Mutex<KernelManager>>>) -> Result<(), String> {
-    let kernel_state = state.inner().clone();
-    stop_kernel_runtime(&kernel_state).await;
+    let kernel_mgr = state.inner().clone();
+    stop_kernel_runtime(&kernel_mgr).await;
     Ok(())
 }
 
@@ -434,9 +414,9 @@ async fn restart_kernel(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<Mutex<KernelManager>>>,
 ) -> Result<kernel::KernelInfo, String> {
-    let kernel_state = state.inner().clone();
-    stop_kernel_runtime(&kernel_state).await;
-    start_kernel_runtime(&app, &kernel_state, None).await
+    let kernel_mgr = state.inner().clone();
+    stop_kernel_runtime(&kernel_mgr).await;
+    start_kernel_runtime(&app, &kernel_mgr, None).await
 }
 
 /// Called when user changes API keys in Settings.
@@ -447,15 +427,15 @@ async fn restart_kernel_with_env(
     env: Vec<(String, String)>,
 ) -> Result<kernel::KernelInfo, String> {
     let validated_env = validate_provider_env(env)?;
-    let kernel_state = state.inner().clone();
+    let kernel_mgr = state.inner().clone();
 
     {
-        let mut mgr = kernel_state.lock().await;
+        let mut mgr = kernel_mgr.lock().await;
         mgr.set_provider_env(validated_env);
     }
 
-    stop_kernel_runtime(&kernel_state).await;
-    start_kernel_runtime(&app, &kernel_state, None).await
+    stop_kernel_runtime(&kernel_mgr).await;
+    start_kernel_runtime(&app, &kernel_mgr, None).await
 }
 
 /// Store provider env without restarting.
@@ -502,9 +482,9 @@ async fn connect_enterprise_profile(
         || result.active_profile_id == result.target_profile_id;
 
     if should_restart {
-        let kernel_state = state.inner().clone();
-        stop_kernel_runtime(&kernel_state).await;
-        match start_kernel_runtime(&app, &kernel_state, None).await {
+        let kernel_mgr = state.inner().clone();
+        stop_kernel_runtime(&kernel_mgr).await;
+        match start_kernel_runtime(&app, &kernel_mgr, None).await {
             Ok(info) => {
                 let _ = app.emit("kernel-started", &info);
             }
@@ -525,9 +505,9 @@ async fn switch_active_profile(
     profile_id: String,
 ) -> Result<profile::ProfileMutationResult, String> {
     let result = profile::switch_active_profile(&app, &profile_id)?;
-    let kernel_state = state.inner().clone();
-    stop_kernel_runtime(&kernel_state).await;
-    match start_kernel_runtime(&app, &kernel_state, None).await {
+    let kernel_mgr = state.inner().clone();
+    stop_kernel_runtime(&kernel_mgr).await;
+    match start_kernel_runtime(&app, &kernel_mgr, None).await {
         Ok(info) => {
             let _ = app.emit("kernel-started", &info);
         }
@@ -552,9 +532,9 @@ async fn remove_profile(
         || previous_active.as_deref() != Some(result.active_profile_id.as_str());
 
     if should_restart {
-        let kernel_state = state.inner().clone();
-        stop_kernel_runtime(&kernel_state).await;
-        match start_kernel_runtime(&app, &kernel_state, None).await {
+        let kernel_mgr = state.inner().clone();
+        stop_kernel_runtime(&kernel_mgr).await;
+        match start_kernel_runtime(&app, &kernel_mgr, None).await {
             Ok(info) => {
                 let _ = app.emit("kernel-started", &info);
             }
@@ -576,14 +556,11 @@ async fn get_data_paths(app: tauri::AppHandle) -> Result<DataPaths, String> {
 #[tauri::command]
 async fn get_default_workspace(app: tauri::AppHandle) -> Result<String, String> {
     let paths = resolve_data_paths(&app);
-    Ok(paths.workspace)
+    Ok(paths.workspace_dir)
 }
 
 #[tauri::command]
-async fn select_workspace(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    if profile::is_active_profile_workspace_locked(&app) {
-        return Err("Workspace selection is disabled by enterprise policy".into());
-    }
+async fn select_workspace(_app: tauri::AppHandle) -> Result<Option<String>, String> {
 
     let result = tokio::task::spawn_blocking(|| {
         rfd::FileDialog::new()
@@ -599,7 +576,7 @@ async fn select_workspace(app: tauri::AppHandle) -> Result<Option<String>, Strin
 #[tauri::command]
 async fn read_data_file(app: tauri::AppHandle, relative_path: String) -> Result<String, String> {
     let paths = resolve_data_paths(&app);
-    let canonical_root = canonical_config_root(&paths.config)?;
+    let canonical_root = canonical_config_root(&paths.config_dir)?;
     let safe_relative = sanitize_relative_path(&relative_path)?;
     let full_path = canonical_root.join(safe_relative);
 
@@ -624,7 +601,7 @@ async fn write_data_file(
     content: String,
 ) -> Result<(), String> {
     let paths = resolve_data_paths(&app);
-    let canonical_root = canonical_config_root(&paths.config)?;
+    let canonical_root = canonical_config_root(&paths.config_dir)?;
     let safe_relative = sanitize_relative_path(&relative_path)?;
     let parent_relative = safe_relative.parent().unwrap_or_else(|| Path::new(""));
     let full_parent = canonical_root.join(parent_relative);
@@ -654,37 +631,34 @@ async fn write_data_file(
     Ok(())
 }
 
-/// Write OpenCode's native config.json to the kernel-state directory.
+/// Write OpenCode's config.json to the engine directory.
 #[tauri::command]
 async fn write_kernel_config(app: tauri::AppHandle, content: String) -> Result<(), String> {
     let paths = resolve_data_paths(&app);
-    let opencode_config_dir = PathBuf::from(&paths.kernel_state).join("opencode");
+    let engine_config_dir = PathBuf::from(&paths.engine_config_dir);
 
-    std::fs::create_dir_all(&opencode_config_dir)
-        .map_err(|e| format!("Failed to create opencode config dir: {e}"))?;
+    std::fs::create_dir_all(&engine_config_dir)
+        .map_err(|e| format!("Failed to create engine config dir: {e}"))?;
 
-    let config_path = opencode_config_dir.join("config.json");
+    let config_path = engine_config_dir.join("config.json");
 
-    let mut config =
+    let config =
         serde_json::from_str::<serde_json::Value>(&content).map_err(|e| format!("Invalid JSON: {e}"))?;
-    profile::apply_managed_settings_to_kernel_config(&app, &mut config)?;
     let json = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize kernel config: {e}"))?;
 
     atomic_write_secure(&config_path, json.as_bytes())
-        .map_err(|e| format!("Failed to write kernel config: {e}"))?;
+        .map_err(|e| format!("Failed to write engine config: {e}"))?;
 
     eprintln!("[main] wrote kernel config to {}", config_path.display());
     Ok(())
 }
 
-/// Read OpenCode's config.json from the kernel-state directory.
+/// Read OpenCode's config.json from the engine directory.
 #[tauri::command]
 async fn read_kernel_config(app: tauri::AppHandle) -> Result<String, String> {
     let paths = resolve_data_paths(&app);
-    let config_path = PathBuf::from(&paths.kernel_state)
-        .join("opencode")
-        .join("config.json");
+    let config_path = PathBuf::from(&paths.engine_config_dir).join("config.json");
 
     if !config_path.exists() {
         return Ok(String::new());

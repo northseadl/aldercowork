@@ -63,7 +63,7 @@ const props = withDefaults(
   width: var(--sidebar-w);
   display: flex;
   align-items: center;
-  padding-left: 72px;
+  padding-left: var(--traffic-light-offset);
   gap: var(--sp);
   -webkit-app-region: no-drag;
 }

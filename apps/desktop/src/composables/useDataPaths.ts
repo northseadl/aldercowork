@@ -7,46 +7,42 @@
 import { ref, readonly, type Ref } from 'vue'
 
 export interface DataPaths {
-    /** Root data directory */
-    data: string
-    /** Configuration files (settings.json) */
-    config: string
-    /** Ephemeral cache */
-    cache: string
-    /** Log files */
-    logs: string
-    /** Downloaded kernel binaries */
-    kernels: string
-    /** AlderCowork-managed Skills */
-    skills: string
-    /** Staging area for skill installs/updates before approval */
-    skillStaging: string
-    /** Persisted local audit reports */
-    skillAuditReports: string
-    /** OpenCode kernel state (isolated from ~/.config/opencode) */
-    kernelState: string
-    /** Default workspace root for the active profile */
-    workspace: string
     /** Active profile identity */
     profileId: string
     profileKind: 'local' | 'enterprise'
     profileLabel: string
+
+    /** Config layer — user intent (settings, credentials) */
+    configDir: string
+    credentialsDir: string
+
+    /** Skills layer — installed skill sources */
+    skillsDir: string
+    skillStagingDir: string
+    auditReportsDir: string
+
+    /** Engine layer — OpenCode runtime (XDG isolation target) */
+    engineDir: string
+    engineConfigDir: string
+    engineSkillsDir: string
+
+    /** Workspace root */
+    workspaceDir: string
 }
 
 const BROWSER_FALLBACK: DataPaths = {
-    data: '~/.aldercowork',
-    config: '~/.aldercowork',
-    cache: '~/.aldercowork/cache',
-    logs: '~/.aldercowork/logs',
-    kernels: '~/.aldercowork/kernels',
-    skills: '~/.aldercowork/skills',
-    skillStaging: '~/.aldercowork/skill-staging',
-    skillAuditReports: '~/.aldercowork/audit-reports',
-    kernelState: '~/.aldercowork/kernel-state',
-    workspace: '~/.aldercowork/workspace',
     profileId: 'local:default',
     profileKind: 'local',
     profileLabel: 'Local',
+    configDir: '~/.aldercowork/config',
+    credentialsDir: '~/.aldercowork/config/credentials',
+    skillsDir: '~/.aldercowork/skills',
+    skillStagingDir: '~/.aldercowork/skill-staging',
+    auditReportsDir: '~/.aldercowork/audit-reports',
+    engineDir: '~/.aldercowork/engine',
+    engineConfigDir: '~/.aldercowork/engine/opencode',
+    engineSkillsDir: '~/.aldercowork/engine/opencode/.agents/skills',
+    workspaceDir: '~/.aldercowork/workspace',
 }
 
 let cachedPaths: DataPaths | null = null

@@ -3,23 +3,19 @@ import { ref } from 'vue'
 
 import { useI18n } from '../i18n'
 import SettingsProfiles from '../components/settings/SettingsProfiles.vue'
-import SettingsProvider from '../components/settings/SettingsProvider.vue'
-import SettingsEngine from '../components/settings/SettingsEngine.vue'
-import SettingsTheme from '../components/settings/SettingsTheme.vue'
-import SettingsShortcuts from '../components/settings/SettingsShortcuts.vue'
+import SettingsProviders from '../components/settings/SettingsProviders.vue'
+import SettingsAppearance from '../components/settings/SettingsAppearance.vue'
 import SettingsAbout from '../components/settings/SettingsAbout.vue'
 
-type SettingsTab = 'profiles' | 'providers' | 'engine' | 'theme' | 'shortcuts' | 'about'
+type SettingsTab = 'providers' | 'profiles' | 'appearance' | 'about'
 
 const { t } = useI18n()
-const activeTab = ref<SettingsTab>('profiles')
+const activeTab = ref<SettingsTab>('providers')
 
 const tabs: { id: SettingsTab; icon: string }[] = [
+  { id: 'providers', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
   { id: 'profiles', icon: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z' },
-  { id: 'providers', icon: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' },
-  { id: 'engine', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-  { id: 'theme', icon: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z' },
-  { id: 'shortcuts', icon: 'M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z' },
+  { id: 'appearance', icon: 'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z' },
   { id: 'about', icon: 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zm0-14v4m0 4h.01' },
 ]
 </script>
@@ -42,12 +38,10 @@ const tabs: { id: SettingsTab; icon: string }[] = [
     </aside>
 
     <section class="settings__content">
-      <SettingsProfiles v-if="activeTab === 'profiles'" />
-      <SettingsProvider  v-else-if="activeTab === 'providers'" />
-      <SettingsEngine    v-else-if="activeTab === 'engine'" />
-      <SettingsTheme     v-else-if="activeTab === 'theme'" />
-      <SettingsShortcuts v-else-if="activeTab === 'shortcuts'" />
-      <SettingsAbout     v-else-if="activeTab === 'about'" />
+      <SettingsProviders  v-if="activeTab === 'providers'" />
+      <SettingsProfiles   v-else-if="activeTab === 'profiles'" />
+      <SettingsAppearance v-else-if="activeTab === 'appearance'" />
+      <SettingsAbout      v-else-if="activeTab === 'about'" />
     </section>
   </div>
 </template>
@@ -58,14 +52,18 @@ const tabs: { id: SettingsTab; icon: string }[] = [
   grid-template-columns: 180px 1fr;
   height: 100%;
   overflow: hidden;
+  gap: calc(var(--sp) * 1);
+  padding: calc(var(--sp) * 1.5);
 }
 
 .settings__nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: calc(var(--sp) * 2) calc(var(--sp) * 1.5);
-  border-right: 1px solid var(--border);
+  padding: calc(var(--sp) * 1.5);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background: var(--content-warm);
 }
 
 .settings__tab {

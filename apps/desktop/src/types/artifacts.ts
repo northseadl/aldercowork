@@ -3,8 +3,6 @@ export type FileOutcomeSource = 'live' | 'diff' | 'summary' | 'snapshot' | 'git'
 
 export interface FileDiffRecord {
   file: string
-  before: string
-  after: string
   additions: number
   deletions: number
   status?: 'added' | 'deleted' | 'modified'
@@ -15,16 +13,11 @@ export interface FileOutcome {
   status: FileOutcomeStatus
   additions: number
   deletions: number
-  before?: string
-  after?: string
   messageId: string
   turnId: string
   live: boolean
   source: FileOutcomeSource
   updatedAt: string
-  binary?: boolean
-  mimeType?: string
-  previewTruncated?: boolean
 }
 
 export interface TurnArtifactSummary {
@@ -39,7 +32,6 @@ export interface SessionArtifactTotals {
   files: number
   additions: number
   deletions: number
-  touchedCount: number
 }
 
 export interface SessionArtifactSummary {
@@ -55,7 +47,6 @@ export function createEmptySessionArtifactSummary(): SessionArtifactSummary {
       files: 0,
       additions: 0,
       deletions: 0,
-      touchedCount: 0,
     },
     error: null,
   }

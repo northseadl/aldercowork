@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, ref, shallowRef, watch, type Ref } from 'vue'
 
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk/v2/client'
 
@@ -30,7 +30,10 @@ async function resolveFetch(): Promise<typeof globalThis.fetch> {
  * Client is rebuilt when port or directory changes.
  */
 export function useClient(port: Ref<number | null>, directory?: Ref<string | null>) {
-    const client = ref<OpencodeClient | null>(null)
+    // shallowRef: SDK client uses class-based namespaces with internal `this` bindings.
+    // Vue's ref() deep-proxies objects, breaking `this.client` inside SDK methods.
+    // shallowRef stores the value as-is without proxy wrapping.
+    const client = shallowRef<OpencodeClient | null>(null)
     const ready = computed(() => client.value !== null)
     const fetchFnRef = ref<typeof globalThis.fetch | null>(null)
 

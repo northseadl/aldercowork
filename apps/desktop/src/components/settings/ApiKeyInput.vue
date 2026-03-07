@@ -104,7 +104,7 @@ async function removeKey() {
         v-model="inputValue"
         type="password"
         class="aki__input"
-        :placeholder="`${envVar}=sk-...`"
+        placeholder="sk-..."
         autocomplete="off"
         spellcheck="false"
         @keydown.enter="saveKey"

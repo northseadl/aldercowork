@@ -14,12 +14,10 @@ export const APP_MODE: AppMode =
 
 export interface MarketplaceBuildConfig {
     openSourceCatalogUrl: string
-    enterpriseHubUrl: string
     enterpriseCatalogPath: string
 }
 
 export const MARKETPLACE_BUILD_CONFIG: MarketplaceBuildConfig = {
     openSourceCatalogUrl: import.meta.env.VITE_OPEN_SOURCE_SKILL_CATALOG_URL || '',
-    enterpriseHubUrl: import.meta.env.VITE_ENTERPRISE_HUB_URL || '',
     enterpriseCatalogPath: import.meta.env.VITE_ENTERPRISE_SKILL_CATALOG_PATH || '/api/skills/catalog',
 }

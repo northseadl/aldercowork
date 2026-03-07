@@ -15,11 +15,11 @@ App.vue → AppShell (Header/Sidebar/Content) → router-view
   ChatView: useChat → SSE event.subscribe → promptAsync → part-centric message model (12 Part types) + artifact aggregation (`file.edited` live / tool attachments / active `session.diff(messageID)` / workspace snapshot fallback / optional git status delta / `session.get.summary.diffs` history restore)
     render pacing: useChat commit barrier (rAF scheduler + post-paint yield, ~30fps) → StreamingMarkdown jitter buffer (fast render while streaming, idle-upgrade to rich highlight)
   SkillsView: marketplaceSkillStore + installedSkillStore + skillAuditStore → 市场搜索 / staged install / 本地审计报告 / SkillDetail
-  RunbooksView: runbookStore (CRUD + JSON persist via read/write_data_file) → RunbookListItem / RunbookEditor (textarea + @skill highlight + todo checkbox preview)
+  RunbooksView: runbookStore (body+steps model, CRUD + JSON persist via read/write_data_file) -> RunbookListItem (progress bar) / RunbookEditor (textarea + step list, zero-markdown editing UX, no block model)
   SettingsView: providers / engine / theme / shortcuts
 
 Kernel: main.rs setup → sidecar `opencode serve --port {random}`
-  env: XDG_{CONFIG,DATA}_HOME={kernel-state} + OPENCODE_CLIENT=desktop + provider_env
+  env: XDG_{CONFIG,DATA}_HOME={engine} + OPENCODE_CLIENT=desktop + provider_env
   readiness: poll /health (仅 HTTP 2xx)
 
 Profile registry:
@@ -28,19 +28,23 @@ Profile registry:
     → resolve_data_paths(activeProfile)
     → kernel restart + frontend profile-bound store reload
 
-Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
+Data dirs (macOS): ~/Library/Application Support/aldercowork/
   ├─ global/profile-registry.json
   └─ profiles/
-      ├─ local/default/
-      │   ├─ settings.json / runbooks.json
-      │   ├─ kernel-state/
-      │   ├─ skills/ / skill-staging/ / audit-reports/
+      ├─ local~default/
+      │   ├─ config/              ← user intent (settings, credentials)
+      │   │   ├─ settings.json
+      │   │   ├─ runbooks.json
+      │   │   └─ credentials/.hub-token
+      │   ├─ skills/              ← installed skill sources (JetBrains plugins equivalent)
+      │   ├─ skill-staging/       ← staging area for audit
+      │   ├─ audit-reports/
+      │   ├─ engine/              ← OpenCode XDG isolation target
+      │   │   └─ opencode/
+      │   │       ├─ config.json / prompts/ / opencode.db / log/ / storage/
+      │   │       └─ .agents/skills/  ← symlinks to ../../skills/{id}
       │   └─ workspace/
-      └─ enterprise/{hub_hash}/{org_id}/{user_id}/
-          ├─ settings.json / runbooks.json / .hub-token
-          ├─ kernel-state/
-          ├─ skills/ / skill-staging/ / audit-reports/
-          └─ workspace/ (或企业策略固定路径)
+      └─ enterprise~{hash}~{org}~{user}/  ← same structure
 ```
 
 ## 架构决策
@@ -48,14 +52,14 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 |---|---|---|
 | SDK Client Subpath | 前端必须使用 `@opencode-ai/sdk/v2/client` 而非 `v2` 导入。`v2/index.js` 会 re-export `server.js`（含 `node:child_process`），Vite 无法 tree-shake → production bundle 白屏 | WebView 非 Node.js 环境 |
 | Sidecar Root Placement | `externalBin: ["opencode"]`，sidecar 放在 `src-tauri/opencode-{triple}`（非 `binaries/` 子目录）。开发模式查找 `src-tauri/opencode-{triple}`，生产 bundle 查找 `Contents/MacOS/opencode` | Tauri bundle 扁平化 sidecar 到 MacOS/ 但 `relative_command_path()` 保留子目录前缀 |
-| Kernel Data Isolation | XDG_CONFIG_HOME + XDG_DATA_HOME 重定向到 `kernel-state/opencode/` | 与用户 `~/.config/opencode` 完全隔离 |
+| Kernel Data Isolation | XDG_CONFIG_HOME + XDG_DATA_HOME 重定向到 `engine/opencode/` | 与用户 `~/.config/opencode` 完全隔离 |
 | Skill Install Pipeline | 市场/手动导入 → `skill-staging/` 隔离区 → 本地审计(`audit-reports/`) → 用户批准后写入 `{APP_DATA}/skills/` | 阻断“下载即执行/安装”，把供应链风险前移到 staging 阶段 |
 | Skill Marketplace Abstraction | 前端以 `SkillMarketplaceProvider` 统一开源市场与企业 Hub；Rust IPC 负责搜索/详情/下载/stage/audit/update | 普通版与企业版共用 UI/状态机，只替换目录源与鉴权 |
 | Runtime Tenant Model | 编译期 `APP_MODE` 仅是 startup hint；真实身份来自运行时 active profile（`local` / `enterprise`） | 普通用户可连接多个企业并切换身份，避免 build-time fork |
-| Profile-root Data Isolation | `settings/runbooks/kernel-state/skills/skill-staging/audit-reports/workspace` 全部挂在 active profile 根目录下 | 企业隔离边界必须是完整数据根，不能只隔离技能目录 |
+| Profile-root Data Isolation | `config/credentials/skills/skill-staging/audit-reports/engine/workspace` 全部挂在 active profile 根目录下 | 企业隔离边界必须是完整数据根，不能只隔离技能目录 |
 | Profile Switch Reload Discipline | `App.vue` 在 profile 切换后先 `refreshPaths()`，再重载 `settings/workspace/skills/runbooks`；`settingsStore.init()` 先回到默认快照，`workspaceStore` 在 reload 前清空内存状态并取消 debounce save timer | data path 是按 active profile 动态解析的；若不先清基线并取消延迟写入，旧 profile 状态会串写到新 profile |
-| Managed Enterprise Policy | 企业 profile 可持久化 `managedSettings`（锁定 providers/model/workspace、固定 Hub catalog、审计等级）并在 Rust 侧回写到 profile settings + kernel config | 高审计企业需要“后端可执行”的固化策略，而不是纯前端禁用按钮 |
-| Skill Discovery Bridge | 启动时在 config.json 注入 `skills.paths = ["{kernel-state}/opencode/.agents/skills"]` | **XDG 隔离只影响 config/data，不影响技能发现**（OpenCode 硬编码 `os.homedir()/.agents/skills/`）。需要 `skills.paths` 桥接 |
+| Enterprise Profile Minimalism | `ConnectEnterpriseProfileRequest` 仅需 `hubUrl` + `label?` + `authToken?`；Rust 侧硬编码 org/user = auto 等待 Hub 认证填充。catalogPath 由客户端唯一真理定义，managedSettings 概念完全删除：无 lockedSections/forcedModel/workspaceRoot/providerOverrides。供应商/模型/工作区操作始终可编辑 | 这些配置应由 Hub 认证后下发而非用户手填；锁定行为是客户端实现自身行为，不是可配置项 |
+| Skill Discovery Bridge | 启动时在 config.json 注入 `skills.paths = ["{engine}/opencode/.agents/skills"]` | **XDG 隔离只影响 config/data，不影响技能发现**（OpenCode 硬编码 `os.homedir()/.agents/skills/`）。需要 `skills.paths` 桥接 |
 | Local Audit Gate | 审计包含 checksum/结构/权限/脚本模式检查；`critical/high` 默认阻断安装 | 企业 Hub 只做目录与鉴权，安全责任不外包给远端服务 |
 | Release Target Scope | GitHub Actions CI/Release 仅保留 `macos-14`(arm64) / `macos-latest`(x64 target) / `windows-latest`(x64)，移除 Linux runner 与 Linux bundles | 降低发布矩阵复杂度，消除 Linux 打包链路引入的不稳定性 |
 | Branch Model | `main`(生产) / `develop`(集成) / `feat|fix/*`(工作分支)。发布走 develop → main PR → tag → Release CI | 线性历史优先，禁止直推 main/develop |
@@ -68,8 +72,8 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 | Part-Centric Message Model | `RichMessage { parts: MessagePart[] }` — 12 种 Part type 同构 SDK | 新增 Part Type 只需添加渲染组件 |
 | @ File/Symbol Reference | `useReference` composable 通过 SDK `find.files()` / `find.symbols()` 搜索，选中后构造 `FilePartInput { source: FilePartSource }` 推入 `promptAsync.parts`。`@` 在 textarea 中触发 popover（防抖 200ms），三种引用源：`FileSource`(路径) / `SymbolSource`(LSP) / `ResourceSource`(MCP)。引用与 attachments 并行，但渲染为 brand 色 chip 以视觉区分 | 与 OpenCode TUI `@` 引用协议完全对齐；零 sidecar 变更 |
 | SSE Stream Contract | `event.subscribe(/event) → promptAsync → session.idle`，结束后 `session.messages` 对齐 | 与 OpenCode 官方流式协议一致 |
-| Tool Lifecycle UI Source | 当前 Chat UI 主要依据 `message.parts` 中的 `tool` part 渲染工具状态；`useChat()` 返回的 `sessionStatus` 尚未被视图消费 | 工具阶段感知来自局部 part，而非全局会话状态；排查“卡顿/排队”需优先审视 part reconcile 与文案映射 |
-| Chat Artifact Aggregation | `useChat` 以 turn 为中心聚合多信号文件成果：`file.edited` live 占位、tool `attachments`、回合结束后主动 `session.diff(messageID)` 回填、workspace `file.list` 快照兜底新增/删除、可用时叠加 `file.status()` git delta、`session.get().summary.diffs` 负责历史恢复；`ChatThread` 在 Assistant 消息尾部渲染 `ArtifactBand`，在线程底部渲染 `ArtifactShelf` | `bash`/二进制产物不会稳定触发 `file.edited`，单一事件源不可靠；多信号聚合既保住即时可见，也避免把伪 part 塞进 `RichMessage.parts` |
+| Tool Lifecycle UI Source | `SkillCard` 两层渲染：completed 工具压缩为 28px 紧凑行，active/failed 保持完整卡片（spinner + badge + timer + expandable I/O） | 完成态工具视觉退后，注意力自动聚焦到正在运行的工具 |
+| Chat Artifact Aggregation | `useChat` 以 turn 为中心聚合多信号文件成果：`file.edited` live 占位、tool `attachments`、回合结束后主动 `session.diff(messageID)` 回填、workspace `file.list` 快照兜底新增/删除、可用时叠加 `file.status()` git delta、`session.get().summary.diffs` 负责历史恢复；`ChatThread` 在 Assistant 消息尾部渲染 `ArtifactBand`，在线程底部渲染可折叠 `ArtifactShelf`。`FileOutcomeCard` 为单行操作型组件（点击用 Tauri shell open 打开文件），不做内联 diff 预览 | 多信号聚合保住即时可见；展示层从展示型卡片重构为操作型 FileRow，聚焦打开文件核心交互 |
 | File-based Settings | `settings.json` 通过 Tauri IPC 读写，`settingsStore` 唯一写入者 | 跨窗口/进程一致 |
 | Provider Config | OpenCode `config.json` 唯一配置源（API Key/Base URL），变更后重启内核生效 | 消除双轨漂移 |
 | Provider UI Shadow State | Settings UI 读取 `settings.json.providers` 的 `hasKey/baseUrl` 作为展示状态；未在启动时从 `config.json` 反向水合 | 读取体验快，但存在“配置真实值与 UI 投影”漂移风险 |
@@ -83,14 +87,15 @@ Data dirs (macOS): ~/Library/Application Support/com.aldercowork.desktop/
 | Per-Request Directory | SDK client 通过 `x-opencode-directory` header 传递工作区路径，切换工作区重建 client —— 内核无需重启 | sidecar 进程无状态，工作目录 per-request 级 |
 | Session Title Lifecycle | 前端即时命名（截取前40字 → `session.update` 持久化）+ 内核自动摘要（SSE `session.updated` → `updateSessionTitle` 实时覆盖） | 策略B：即时反馈+后端覆盖，两条链路互补 |
 | Session History Fetch | 当前 `session.list()` / `session.messages()` 走默认参数（未使用 start/search/limit） | 接入简单，但大规模历史下缺少分页与搜索控制面 |
-| Runbook JSON Persistence | `runbooks.json` 通过 `read_data_file`/`write_data_file` IPC 读写，`runbookStore` 唯一写入者。Runbook 是带 `@skill` 引用和 `- [ ]` todo 标记的结构化笔记，整体作为 prompt 执行 | 零 Rust 变更复用已有 IPC；内容即 prompt，无需执行引擎 |
-| Runbook→Chat Handoff | Runbook 发送聊天使用双通道：`sessionStorage` durable 草稿 + `window` 事件即时投递；ChatView 挂载时消费并清除草稿 | 规避跨路由事件先发后挂载导致的 payload 丢失，同时保留同页即时响应 |
+| Runbook JSON Persistence | `runbooks.json` 通过 `read_data_file`/`write_data_file` IPC 读写，`runbookStore` 唯一写入者。Runbook 是 `body`（纯文本任务描述）+ `steps`（有序步骤列表）的结构化模型，支持从旧 Block model 自动迁移。发送时 `serializeForPrompt` 生成包含 todowrite 引导的 prompt | NLOC: 删除 Block 编辑器(874 LOC)，回到用户认知模型 |
+| Runbook->Chat Send | RunbooksView 通过 `sessionStore.setPendingPrompt()` 存入 prompt → `router.push('/')` → ChatView `onMounted` 消费 `consumePendingPrompt()` 并调用 `useChat.send()` 完整流式管道（SSE 订阅 + promptAsync + 流式渲染）。不直接调用 SDK `promptAsync`（会绕过 SSE 监听导致无流式响应） | 必须走 ChatView 的 send 管道才能获得 SSE 流式监听 |
+| SSE Error Strategy | `consumer.ts` 对 `session.error` 和 `message.updated.error` 采用优雅降级（插入 ⚠️ text part）而非 throw。引擎的 agent loop 在工具调用解析失败时会发布 `session.error` SSE 事件，throw 会杀死整个 SSE 消费者导致对话"崩溃"。正确做法：surface error → let stream continue → 等待 `session.idle` 自然结束 | 工具调用失败是可预期的 agent 生命周期事件，不是致命异常 |
 | i18n | 所有用户可见文本通过 `t()` 从 `zh.ts`/`en.ts` 读取 | 中英双语 |
 
 ## 设计系统
 - `tokens.css`: Typography / Radius / Motion / Layout + dark/light 双主题（`--on-brand`, `--syntax-{string,function,number,literal}` 等 token 在两个主题块均有定义）
 - 双层材质: Shell(`--shell`) 包裹 Content(`--content`)，Content 区域 `--r-2xl` 圆角
 - 基础组件: `AppButton(brand/ghost/subtle)` / `AppBadge` / `AppIcon` / `AppCodeBlock`
-- Part 渲染: `StreamingMarkdown`(morphdom 增量) / `ReasoningBlock`(折叠思维链) / `TokenStats` / `PatchDiff` / `FileAttachment`；文件成果层由 `ArtifactBand` / `ArtifactShelf` / `FileOutcomeCard` 独立于 Part union 渲染
+- Part 渲染: `StreamingMarkdown`(morphdom 增量) / `ReasoningBlock`(折叠思维链) / `TokenStats` / `PatchDiff` / `FileAttachment`；文件成果层由 `ArtifactBand` / `ArtifactShelf`(折叠态) / `FileOutcomeCard`(单行可点击 FileRow，`plugin:shell|open` 打开文件) 独立于 Part union 渲染
 - Streaming 约束: 流式期默认 fast markdown（禁用 highlight.js）降低 CPU + 限制渐显动画只作用于 block 节点；结束后 idle 时段升级 rich render（语法高亮 + copy button）
 - Theme: `useTheme()` composable 是唯一 writer — 三态 preference (`system|dark|light`, 默认 `system`) + `matchMedia` OS 监听 + reactive DOM sync。ThemeToggle / SettingsTheme / main.ts 均消费此 composable

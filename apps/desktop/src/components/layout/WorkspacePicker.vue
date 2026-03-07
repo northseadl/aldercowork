@@ -2,12 +2,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 import { useWorkspaceStore } from '../../stores/workspace'
-import { useProfileStore } from '../../stores/profile'
 import { useI18n } from '../../i18n'
 
 const { t } = useI18n()
 const workspaceStore = useWorkspaceStore()
-const profileStore = useProfileStore()
 
 const pickerRef = ref<HTMLElement | null>(null)
 const isOpen = ref(false)
@@ -95,7 +93,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocumentClick))
             <span class="ws-option-path">{{ ws.path }}</span>
           </div>
           <button
-            v-if="ws.id !== 'default' && !profileStore.workspaceLocked"
+            v-if="ws.id !== 'default'"
             type="button"
             class="ws-option-remove"
             :title="t('workspace.remove')"
@@ -108,9 +106,9 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocumentClick))
           </button>
         </div>
 
-        <div v-if="!profileStore.workspaceLocked" class="ws-divider" />
+        <div class="ws-divider" />
 
-        <button v-if="!profileStore.workspaceLocked" type="button" class="ws-option ws-open" @click="openFolder">
+        <button type="button" class="ws-option ws-open" @click="openFolder">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             <line x1="12" y1="11" x2="12" y2="17" />

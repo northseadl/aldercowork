@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 
 import { ChatThread } from '../components/chat'
@@ -11,7 +11,6 @@ import { useKernel } from '../composables/useKernel'
 import { useSessionStore } from '../stores/session'
 import { useWorkspaceStore } from '../stores/workspace'
 import { useI18n } from '../i18n'
-import { RUNBOOK_DRAFT_STORAGE_KEY, RUNBOOK_SEND_EVENT } from '../constants/runbook'
 
 import type { ChatThreadMessage } from '../components/chat'
 import type { PermissionDecision, PermissionRequest } from '../composables'
@@ -24,9 +23,12 @@ const toast = useToast()
 const { confirmPermission } = useConfirm()
 
 const { port: kernelPort, status: kernelStatus, restart: restartKernel } = useKernel()
+// ChatView creates its own SDK client ref for useChat.
+// Why not read from sessionStore.client? The SDK's internal methods use `this` binding,
+// which breaks when the OpencodeClient passes through Pinia's reactive() proxy.
+// App.vue's global client handles sessionStore (session CRUD / ensureActiveSession).
+// This local client handles useChat (SSE streaming / promptAsync).
 const { client: sdkClient } = useClient(kernelPort, computed(() => workspaceStore.activePath))
-
-watch(sdkClient, (c) => sessionStore.setClient(c), { immediate: true })
 
 const activeSessionId = computed(() => sessionStore.activeSessionId)
 
@@ -330,37 +332,7 @@ const {
 const canSend = computed(() => (inputText.value.trim().length > 0 || pendingAttachments.value.length > 0 || hasReferences.value || hasCommand.value) && !isStreaming.value)
 let modelRestartTimer: ReturnType<typeof setTimeout> | null = null
 
-function applyExternalDraft(content: string) {
-  const draft = content.trim()
-  if (!draft) return
-  if (inputText.value.trim()) {
-    inputText.value = `${inputText.value.trimEnd()}\n\n${draft}`
-  } else {
-    inputText.value = draft
-  }
-  if (composeRef.value) {
-    composeRef.value.style.height = 'auto'
-    composeRef.value.style.height = Math.min(composeRef.value.scrollHeight, 200) + 'px'
-    composeRef.value.focus()
-  }
-}
 
-function consumeRunbookDraftFromStorage() {
-  try {
-    const draft = window.sessionStorage.getItem(RUNBOOK_DRAFT_STORAGE_KEY)
-    if (!draft) return
-    window.sessionStorage.removeItem(RUNBOOK_DRAFT_STORAGE_KEY)
-    applyExternalDraft(draft)
-  } catch {
-    // Best effort in restricted environments.
-  }
-}
-
-function handleRunbookSendEvent(event: Event) {
-  const detail = (event as CustomEvent<{ content?: string }>).detail
-  if (!detail?.content) return
-  applyExternalDraft(detail.content)
-}
 
 function handleModelChanged() {
   if (modelRestartTimer) clearTimeout(modelRestartTimer)
@@ -418,10 +390,7 @@ watch(
   },
 )
 
-onMounted(() => {
-  window.addEventListener(RUNBOOK_SEND_EVENT, handleRunbookSendEvent as EventListener)
-  consumeRunbookDraftFromStorage()
-})
+
 
 onBeforeRouteLeave(() => {
   cancelStream()
@@ -429,11 +398,36 @@ onBeforeRouteLeave(() => {
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener(RUNBOOK_SEND_EVENT, handleRunbookSendEvent as EventListener)
   if (modelRestartTimer) clearTimeout(modelRestartTimer)
   cancelStream()
   resetComposeState()
 })
+
+// --- Cross-route prompt injection (e.g. runbook → chat) ---
+// When RunbooksView deposits a prompt via sessionStore.setPendingPrompt(),
+// this watcher consumes and dispatches it through the full SSE streaming pipeline.
+// We watch `sdkClient` instead of using onMounted because useClient creates the
+// SDK client asynchronously (watches kernelPort), so it's typically null on mount.
+watch(
+  sdkClient,
+  async (client) => {
+    if (!client) return
+    // consumePendingPrompt is one-shot: returns null after first call
+    const injected = sessionStore.consumePendingPrompt()
+    if (!injected) return
+
+    const activeId = await sessionStore.ensureActiveSession()
+    if (!activeId) return
+
+    try {
+      await rawSend(injected)
+    } catch (error) {
+      toast.error(toErrorMessage(error))
+    }
+    sessionStore.touchSession(sessionStore.activeSessionId)
+  },
+  { immediate: true },
+)
 
 async function handleSend() {
   const text = inputText.value.trim()
@@ -772,8 +766,10 @@ function attachmentDisplayName(att: FileAttachment): string {
 
 .chat-empty__title {
   margin: 0;
-  font: var(--fw-semibold) 1.5rem / var(--lh-tight) var(--font);
+  font: var(--fw-semibold) var(--text-display) / var(--lh-tight) var(--font);
+  letter-spacing: var(--ls-display);
   color: var(--text-1);
+  text-wrap: balance;
 }
 
 .chat-empty__desc {
@@ -902,6 +898,7 @@ function attachmentDisplayName(att: FileAttachment): string {
 .omnibar:focus-within {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-subtle);
+  transition: border-color var(--speed-precision) var(--ease), box-shadow var(--speed-precision) var(--ease);
 }
 
 /* Attachment preview strip */
@@ -1038,8 +1035,8 @@ function attachmentDisplayName(att: FileAttachment): string {
   transition: opacity var(--speed-quick) var(--ease), transform var(--speed-quick) var(--ease);
 }
 
-.omnibar-send:hover:not(:disabled) { opacity: .9; }
-.omnibar-send:active:not(:disabled) { transform: scale(.95); }
+.omnibar-send:hover:not(:disabled) { opacity: .85; }
+.omnibar-send:active:not(:disabled) { transform: scale(.96); }
 .omnibar-send:disabled { cursor: not-allowed; opacity: 0.45; }
 .omnibar-send svg { width: 14px; height: 14px; }
 

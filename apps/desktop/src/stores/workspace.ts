@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 
 import { useSettingsStore, type WorkspacePersisted } from './settings'
-import { useProfileStore } from './profile'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -21,7 +20,6 @@ export interface Workspace {
 
 export const useWorkspaceStore = defineStore('workspace', () => {
     const settingsStore = useSettingsStore()
-    const profileStore = useProfileStore()
     const activeWorkspace = ref<Workspace | null>(null)
     const recentWorkspaces = ref<Workspace[]>([])
     const loaded = ref(false)
@@ -95,10 +93,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
             recentWorkspaces.value = recent
             activeWorkspace.value = (activeId ? recent.find((w) => w.id === activeId) : recent[0]) ?? null
 
-            if (profileStore.workspaceLocked) {
-                recentWorkspaces.value = []
-                activeWorkspace.value = null
-            }
+
 
             if (!activeWorkspace.value) {
                 await initDefault()
@@ -148,9 +143,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
 
     async function openProjectFolder(): Promise<string | null> {
-        if (profileStore.workspaceLocked) {
-            return null
-        }
 
         try {
             const selected = await invoke<string | null>('select_workspace')
@@ -180,7 +172,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
 
     function removeWorkspace(id: string) {
-        if (profileStore.workspaceLocked) return
         if (id === 'default') return // Can't remove default
         recentWorkspaces.value = recentWorkspaces.value.filter((w) => w.id !== id)
         if (activeWorkspace.value?.id === id) {

@@ -1,4 +1,5 @@
-export { default as SettingsEngine } from './SettingsEngine.vue'
-export { default as SettingsTheme } from './SettingsTheme.vue'
-export { default as SettingsShortcuts } from './SettingsShortcuts.vue'
+export { default as SettingsProviders } from './SettingsProviders.vue'
+export { default as SettingsProfiles } from './SettingsProfiles.vue'
+export { default as SettingsAppearance } from './SettingsAppearance.vue'
 export { default as SettingsAbout } from './SettingsAbout.vue'
+export { default as ApiKeyInput } from './ApiKeyInput.vue'

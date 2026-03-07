@@ -10,7 +10,6 @@ import {
 import type {
   AppProfile,
   ConnectEnterpriseProfileRequest,
-  ManagedSection,
   ProfileMutationResult,
 } from '../types/profile'
 
@@ -32,7 +31,6 @@ export const useProfileStore = defineStore('profile', () => {
     profiles.value.find((profile) => profile.id === activeProfileId.value) ?? null,
   )
   const isEnterpriseProfile = computed(() => activeProfile.value?.kind === 'enterprise')
-  const managedSettings = computed(() => activeProfile.value?.managedSettings ?? null)
 
   function applySnapshot(snapshot: { activeProfileId: string; profiles: AppProfile[] }) {
     activeProfileId.value = snapshot.activeProfileId
@@ -57,19 +55,6 @@ export const useProfileStore = defineStore('profile', () => {
       loading.value = false
     }
   }
-
-  function isSectionLocked(section: ManagedSection): boolean {
-    const managed = managedSettings.value
-    if (!managed) return false
-    if (section === 'workspace' && managed.disableWorkspaceSelection) return true
-    return managed.lockedSections.includes(section)
-  }
-
-  const providersLocked = computed(() => isSectionLocked('providers'))
-  const modelLocked = computed(() =>
-    isSectionLocked('model') || Boolean(managedSettings.value?.forcedModel),
-  )
-  const workspaceLocked = computed(() => isSectionLocked('workspace'))
 
   async function connectEnterpriseProfile(request: ConnectEnterpriseProfileRequest) {
     switching.value = true
@@ -132,18 +117,13 @@ export const useProfileStore = defineStore('profile', () => {
     profiles,
     activeProfileId,
     activeProfile,
-    managedSettings,
     loaded,
     loading,
     switching,
     error,
     isEnterpriseProfile,
-    providersLocked,
-    modelLocked,
-    workspaceLocked,
     init,
     refresh,
-    isSectionLocked,
     connectEnterpriseProfile,
     switchProfile,
     removeEnterpriseProfile,

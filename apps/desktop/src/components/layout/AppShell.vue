@@ -24,10 +24,4 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .app-shell :deep(*) {
-    animation: none !important;
-    transition: none !important;
-  }
-}
 </style>

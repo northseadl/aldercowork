@@ -167,7 +167,7 @@ function skipForNow() {
                 v-model="apiKeyInput"
                 type="password"
                 class="welcome__input"
-                :placeholder="`${selectedDef.envVar}=sk-...`"
+                :placeholder="'sk-...'"
                 autocomplete="off"
                 spellcheck="false"
               />

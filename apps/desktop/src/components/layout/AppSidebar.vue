@@ -169,7 +169,9 @@ function handleSessionKeydown(event: KeyboardEvent, sessionId: string) {
 .sidebar {
   grid-column: 1;
   grid-row: 2;
-  background: transparent;
+  background: var(--shell-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -217,7 +219,11 @@ function handleSessionKeydown(event: KeyboardEvent, sessionId: string) {
   flex-shrink: 0;
   stroke-linecap: round;
   stroke-linejoin: round;
-  transition: color var(--speed-quick);
+  transition: color var(--speed-quick), transform var(--speed-quick);
+}
+
+.side-item:hover svg {
+  transform: translateX(1px);
 }
 
 .side-item.active svg { color: var(--brand); }

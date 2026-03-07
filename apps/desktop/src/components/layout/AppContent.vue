@@ -13,6 +13,7 @@
   box-shadow: var(--shadow-content);
   display: flex;
   flex-direction: column;
+  view-transition-name: main-content;
 }
 
 .content::after {

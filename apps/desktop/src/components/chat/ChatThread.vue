@@ -295,8 +295,8 @@ onMounted(() => { void scrollToBottom(true) })
 .skill-cards {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: calc(var(--sp) * 1.5) 0;
+  gap: 2px;
+  margin: calc(var(--sp) * 1) 0;
 }
 
 .unknown-part {

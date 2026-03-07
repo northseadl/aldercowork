@@ -178,6 +178,9 @@ export const useSessionStore = defineStore('session', () => {
   const creating = ref(false)
   const error = ref<string | null>(null)
 
+  // Cross-route prompt injection (e.g. runbook → chat)
+  const pendingPrompt = ref<PromptInput | null>(null)
+
   // shallowRef avoids Vue deep-proxying the SDK class (which breaks private fields)
   const client = shallowRef<OpencodeClient | null>(null)
 
@@ -342,9 +345,8 @@ export const useSessionStore = defineStore('session', () => {
     const currentClient = client.value
     if (currentClient && !id.startsWith('local-')) {
       try {
-        // Follow the same flattened convention as session.create
-        const updateFn = currentClient.session.update as (opts: Record<string, unknown>) => Promise<unknown>
-        await updateFn({ sessionID: id, title })
+        // Call update directly on the namespace to preserve `this` binding
+        await (currentClient.session.update as (opts: Record<string, unknown>) => Promise<unknown>)({ sessionID: id, title })
       } catch (e) {
         console.warn('[session] Failed to persist title:', e)
       }
@@ -392,6 +394,19 @@ export const useSessionStore = defineStore('session', () => {
     error.value = null
     loading.value = false
     creating.value = false
+    pendingPrompt.value = null
+  }
+
+  /** Deposit a prompt to be consumed by ChatView after navigation. */
+  function setPendingPrompt(prompt: PromptInput) {
+    pendingPrompt.value = prompt
+  }
+
+  /** Consume and clear the pending prompt. Returns null if none. */
+  function consumePendingPrompt(): PromptInput | null {
+    const p = pendingPrompt.value
+    pendingPrompt.value = null
+    return p
   }
 
   return {
@@ -403,6 +418,7 @@ export const useSessionStore = defineStore('session', () => {
     client,
     activeSession,
     hasActiveSessions,
+    pendingPrompt,
     setClient,
     loadSessions,
     createSession,
@@ -413,6 +429,8 @@ export const useSessionStore = defineStore('session', () => {
     updateSessionTitle,
     touchSession,
     resetForProfile,
+    setPendingPrompt,
+    consumePendingPrompt,
   }
 })
 

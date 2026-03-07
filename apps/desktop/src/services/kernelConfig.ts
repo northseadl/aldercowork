@@ -1,14 +1,12 @@
 /**
  * Kernel config service — manages OpenCode's config.json.
  *
- * Reads/writes to {kernel-state}/opencode/config.json via Tauri IPC.
+ * Reads/writes to {engine}/opencode/config.json via Tauri IPC.
  * This service is desktop-only: any I/O failure is surfaced to callers.
  *
  * This is a pure service (no Vue reactivity). Use directly from
  * stores, composables, or other services.
  */
-
-import { getActiveProfile } from './profile'
 
 // ---------------------------------------------------------------------------
 // OpenCode config model — typed representation of config.json
@@ -79,17 +77,6 @@ async function writeRaw(content: string): Promise<void> {
     }
 }
 
-async function assertSectionEditable(section: 'providers' | 'model'): Promise<void> {
-    const activeProfile = await getActiveProfile().catch(() => null)
-    const managed = activeProfile?.managedSettings
-    if (!managed) return
-
-    const isLocked = managed.lockedSections.includes(section)
-        || (section === 'model' && Boolean(managed.forcedModel))
-    if (isLocked) {
-        throw new Error(`The active enterprise profile locks ${section} settings`)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Config operations
@@ -128,7 +115,6 @@ export async function getGlobalModel(): Promise<{ providerID: string; modelID: s
 
 /** Write the global model to config.json. This is the only way to change model. */
 export async function setGlobalModel(providerID: string, modelID: string): Promise<void> {
-    await assertSectionEditable('model')
     const config = await loadConfig()
     config.model = `${providerID}/${modelID}`
     await saveConfig(config)
@@ -161,7 +147,6 @@ export async function getApiKey(providerId: string): Promise<string | null> {
 }
 
 export async function setApiKey(providerId: string, apiKey: string): Promise<void> {
-    await assertSectionEditable('providers')
     const config = await loadConfig()
 
     if (!config.provider) config.provider = {}
@@ -173,7 +158,6 @@ export async function setApiKey(providerId: string, apiKey: string): Promise<voi
 }
 
 export async function removeApiKey(providerId: string): Promise<void> {
-    await assertSectionEditable('providers')
     const config = await loadConfig()
 
     if (config.provider?.[providerId]?.options) {
@@ -195,7 +179,6 @@ export async function removeApiKey(providerId: string): Promise<void> {
 }
 
 export async function setBaseUrl(providerId: string, baseURL: string): Promise<void> {
-    await assertSectionEditable('providers')
     const config = await loadConfig()
 
     if (!config.provider) config.provider = {}
