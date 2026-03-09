@@ -64,6 +64,7 @@ export function parseToolFromPart(
         name: asString(part.tool) ?? asString(part.name) ?? previous?.name ?? 'unknown_tool',
         input: rawInput === undefined ? (previous?.input ?? '') : stringifyValue(rawInput),
         output: rawOutput === undefined ? previous?.output : stringifyValue(rawOutput),
+        error: rawError === undefined ? previous?.error : stringifyValue(rawError),
         status,
         title: asString(state.title) ?? previous?.title ?? undefined,
         attachments: rawAttachments.length > 0 ? rawAttachments.map((item) => {

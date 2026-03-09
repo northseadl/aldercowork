@@ -41,6 +41,14 @@ function extractAssistantError(info: Record<string, unknown>): string | null {
     return asString(data.message) ?? asString(rec.message) ?? asString(info.error) ?? null
 }
 
+function isTurnUserMessage(state: StreamState, messageId: string | null): boolean {
+    return messageId !== null && messageId === state.turnUserMessageId
+}
+
+function isTurnAssistantMessage(state: StreamState, messageId: string | null): boolean {
+    return messageId !== null && state.assistantMessageIds.has(messageId)
+}
+
 // ---------------------------------------------------------------------------
 // Stream consumer
 // ---------------------------------------------------------------------------
@@ -68,7 +76,6 @@ export async function consumeEventStream(
     onToolUpdated?: (sessionId: string, assistantMessageId: string, tool: ToolCallState) => void,
     onTurnCompleted?: (sessionId: string, assistantMessageId: string) => void,
 ): Promise<string | null> {
-
     for await (const payload of stream) {
         const event = asRecord(payload)
         const rawType = asString(event.type)
@@ -79,7 +86,7 @@ export async function consumeEventStream(
         const props = asRecord(event.properties)
         const evtSid = resolveEventSessionId(type, props)
         if (evtSid && evtSid !== sessionId) continue
-        if (!state.promptDispatched) continue
+        if (!state.dispatchStarted) continue
 
         // --- Session title update (backend auto-summarize) ---
         if (type === 'session.updated' || type === 'session.created') {
@@ -104,12 +111,14 @@ export async function consumeEventStream(
             const errMsg = extractSessionError(props)
             const errPart = findOrCreatePart(aiMsg, state, `session-error-${Date.now()}`, 'text')
             errPart.text = `⚠️ ${errMsg}`
+            state.turnObserved = true
             state.sawActivity = true
             await commit()
             continue
         }
 
         if (type === 'file.edited') {
+            if (!state.turnObserved) continue
             const file = asString(props.file)
             if (!file) continue
             state.sawActivity = true
@@ -119,6 +128,7 @@ export async function consumeEventStream(
         }
 
         if (type === 'session.diff') {
+            if (!state.turnObserved) continue
             const diff = Array.isArray(props.diff)
                 ? props.diff
                     .map(parseFileDiffRecord)
@@ -137,22 +147,32 @@ export async function consumeEventStream(
             const msgObj = asRecord(asRecord(props.message).info)
             const info = Object.keys(msgObj).length ? msgObj : asRecord(props.info)
             const msgId = asString(info.id)
+            const role = asString(info.role)
 
-            // Track non-assistant messages so we can skip their parts later
-            if (asString(info.role) !== 'assistant') {
-                if (msgId) {
-                    state.skippedMessageIds.add(msgId)
-                    state.latestUserMessageId = msgId
-                }
+            if (role !== 'assistant') {
+                if (!isTurnUserMessage(state, msgId)) continue
+                state.turnObserved = true
+                state.latestUserMessageId = msgId
                 continue
             }
+
+            const parentId = asString(info.parentID)
+            if (parentId !== state.turnUserMessageId) continue
 
             // Agentic loop: OpenCode may produce multiple assistant messages per prompt
             // (e.g. msg1: text+tool → tool result → msg2: text). Always adopt the latest
             // assistant messageID so all parts accumulate into our single UI message.
             if (msgId) {
+                state.turnObserved = true
+                state.assistantMessageIds.add(msgId)
                 state.assistantMessageId = msgId
                 aiMsg.id = msgId
+            }
+            aiMsg.parentId = parentId
+
+            const finishReason = asString(info.finish)
+            if (finishReason) {
+                aiMsg.finishReason = finishReason
             }
 
             const providerID = asString(info.providerID)
@@ -187,8 +207,8 @@ export async function consumeEventStream(
             const partId = asString(part.id) ?? asString(props.partID) ?? `part-${aiMsg.parts.length}`
             const partMsgId = asString(part.messageID) ?? asString(props.messageID)
 
-            // Skip parts belonging to non-assistant messages (e.g. user message echo)
-            if (partMsgId && state.skippedMessageIds.has(partMsgId)) continue
+            if (isTurnUserMessage(state, partMsgId)) continue
+            if (!isTurnAssistantMessage(state, partMsgId)) continue
 
             // Adopt latest assistant messageID (agentic loop produces multiple)
             if (partMsgId) {
@@ -412,21 +432,16 @@ export async function consumeEventStream(
         // --- Session completion ---
         if (type === 'session.status') {
             const statusType = asString(asRecord(props.status).type) ?? asString(props.status)
-            if (statusType === 'idle' && state.completionArmed) {
-                state.completionArmed = false
-                onSessionStatus?.('idle')
-                if (state.assistantMessageId) {
-                    onTurnCompleted?.(sessionId, state.assistantMessageId)
-                }
-                return state.assistantMessageId
-            }
-            if (statusType) {
+            // `session.status` is a process signal; the authoritative terminal
+            // event for this turn is `session.idle`.
+            if (statusType && statusType !== 'idle') {
                 onSessionStatus?.(statusType)
             }
             continue
         }
 
-        if (type === 'session.idle' && state.completionArmed) {
+        if (type === 'session.idle') {
+            if (!state.completionArmed || !state.turnObserved || !state.sawActivity) continue
             state.completionArmed = false
             onSessionStatus?.('idle')
             if (state.assistantMessageId) {

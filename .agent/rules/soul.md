@@ -52,3 +52,7 @@
 - **Late-bound tenant writes**: 在多租户/多 profile 应用里，如果持久化目标在“写入时”才按 active tenant 解析，而前端又有 debounce/异步 reload，旧租户的延迟写入会污染新租户；必须在上下文切换时取消 pending writes，并在 reload 前先把内存状态重置为 tenant-local 基线。
 - **Hot-swapped store API drift**: 在 HMR/热更新环境里，旧的状态容器实例不一定立即获得新 action；app 层 orchestration 直接调用新增方法会出现 `x is not a function`。对关键切换链路应优先调用稳定基元，或做 feature-detect fallback。
 - **Pinia-proxied SDK instance**: 将依赖 `this` 绑定的 SDK class 实例存入 Pinia store 的 `shallowRef` 后，外部通过 `store.prop` 读取时 Pinia 的 `reactive()` 会自动解包 shallowRef 但可能对嵌套属性访问产生中间 proxy，导致 destructured method call 丢失 `this`（`'undefined is not an object (evaluating this.client)'`）；应通过独立 `ref()`/`useClient()` 持有原始实例，store 仅用于 null/非 null 判断和简单 CRUD。
+- **Lazy SSE handshake**: 某些 SDK 的 `event.subscribe()` 只返回惰性 async generator，真正的 `fetch('/event')` 要等第一次 `next()` 才发生；如果“创建消费任务但不等待首个 `server.connected`/handshake 就 dispatch”，日志里会表现为业务请求先于 SSE 连接建立。正确做法是显式 prime 流（消费并回放首个握手事件），确认订阅 ready 后再发送业务请求。
+- **Transport-level completion oracle**: 对长运行 Agent 任务，把同步 RPC 的超时/返回值当成“任务最终成败”会误判真实状态；正确结论必须来自 durable state（消息持久化、终态 finish、`session.idle`、引擎日志）而不是单次 HTTP 调用结果。
+- **Status-without-cause UI**: 前端如果只传播“failed/error 状态”而丢弃底层 error payload，用户和后续维护者都会看到症状却看不到原因；失败状态必须携带可见错误文本，至少保留原始工具/接口错误摘要。
+- **Text-gated terminal notice**: 以“是否已有文本”决定是否显示终态告警，会掩盖 `content-filter`/`length` 这类“先输出前缀再被终止”的真实结束原因；终态提示应由 finish reason 驱动，而不是由文本是否为空驱动。

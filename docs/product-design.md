@@ -125,7 +125,7 @@ my-skill/
 
 ### 聊天系统
 
-- **SSE 流式渲染**：`event.subscribe` → `promptAsync` → Part-centric 增量更新
+- **SSE 流式渲染**：先 prime `event.subscribe` 到首个 `server.connected`，再 dispatch `promptAsync` / `command`；前端为每轮生成上游兼容 `messageID`，以 `assistant.parentID === userMessageID` 做 turn-scoped 聚合；本轮完成以 `session.idle` 为准，若最终 `finish=content-filter|length` 且无正文则补可见终止说明
 - **Part 类型支持**：text / reasoning / file / tool / step / patch / agent / retry / compaction / subtask
 - **文件成果可视化**：`file.edited` live 占位 + `session.diff` 回填，Assistant 消息尾部展示本轮 `Artifact Band`，线程底部展示会话级 `Artifact Shelf`
 - **流式 Markdown**：morphdom 增量 DOM patch（StreamingMarkdown 组件）

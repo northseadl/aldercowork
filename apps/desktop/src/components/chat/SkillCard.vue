@@ -19,7 +19,7 @@ const isActive = computed(() => props.status === 'pending' || props.status === '
 const isCompact = computed(() => props.status === 'completed')
 
 const hasDetails = computed(() =>
-  Boolean(props.input?.trim() || props.output?.trim() || props.status === 'failed'),
+  Boolean(props.input?.trim() || props.output?.trim() || props.error?.trim() || props.status === 'failed'),
 )
 
 const statusLabel = computed(() => {
@@ -130,6 +130,10 @@ onBeforeUnmount(stopTimer)
         <pre v-if="props.output" class="sk-block">{{ props.output }}</pre>
         <div v-else class="sk-empty"><span>{{ outputPlaceholder }}</span></div>
       </div>
+      <div v-if="props.error" class="sk-section">
+        <div class="sk-label">{{ t('common.error') }}</div>
+        <pre class="sk-block is-error">{{ props.error }}</pre>
+      </div>
     </div>
   </div>
 
@@ -196,6 +200,10 @@ onBeforeUnmount(stopTimer)
             <span>{{ outputPlaceholder }}</span>
             <div v-if="isActive" class="sk-shimmer" />
           </div>
+        </div>
+        <div v-if="props.error" class="sk-section">
+          <div class="sk-label">{{ t('common.error') }}</div>
+          <pre class="sk-block is-error">{{ props.error }}</pre>
         </div>
       </section>
     </div>
@@ -443,6 +451,11 @@ onBeforeUnmount(stopTimer)
   word-break: break-word;
   max-height: 180px;
   overflow: auto;
+}
+
+.sk-block.is-error {
+  background: color-mix(in srgb, var(--color-error) 10%, var(--surface-active));
+  border: 1px solid color-mix(in srgb, var(--color-error) 24%, transparent);
 }
 
 .sk-empty {

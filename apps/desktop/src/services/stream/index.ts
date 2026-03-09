@@ -21,6 +21,7 @@ export {
     asString,
     isAbortError,
     nextId,
+    nextRemoteMessageId,
     normalizeError,
     nowISO,
 } from './helpers'
@@ -30,3 +31,6 @@ export { parseToolFromPart } from './parts'
 
 // Consumer
 export { consumeEventStream } from './consumer'
+
+// Subscription lifecycle
+export { subscribePrimedEventStream } from './subscription'

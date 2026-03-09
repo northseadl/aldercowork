@@ -33,9 +33,11 @@ import {
   createStreamState,
   isAbortError,
   nextId,
+  nextRemoteMessageId,
   normalizeError,
   nowISO,
   parseToolFromPart,
+  subscribePrimedEventStream,
 } from '../services/stream'
 import { createEmptySessionArtifactSummary } from '../types/artifacts'
 import {
@@ -60,6 +62,7 @@ export type { PermissionDecision, PermissionRequest, PermissionResolver } from '
 const STREAM_RECONNECT_MAX_ATTEMPTS = 4
 const STREAM_RECONNECT_BASE_DELAY_MS = 250
 const STREAM_CLOSE_BEFORE_COMPLETION_ERROR = 'Event stream closed before session completion'
+const SYNTHETIC_FINISH_NOTICE_PREFIX = 'finish-notice:'
 
 function normalizeNonEmpty(v: string | null | undefined): string | null {
   if (!v) return null
@@ -182,6 +185,36 @@ function mergeAssistantPart(current: MessagePart | undefined, remote: MessagePar
   return remote
 }
 
+function upsertAssistantFinishNotice(message: RichMessage, text: string): void {
+  const existing = message.parts.find((part) => part.type === 'text' && part.id.startsWith(SYNTHETIC_FINISH_NOTICE_PREFIX))
+  if (existing) {
+    existing.text = text
+    return
+  }
+
+  message.parts.push({
+    id: `${SYNTHETIC_FINISH_NOTICE_PREFIX}${message.id}:${message.finishReason ?? 'unknown'}`,
+    type: 'text',
+    text,
+  })
+}
+
+function ensureAssistantCompletionNotice(message: RichMessage): void {
+  if (message.role !== 'assistant') return
+  if (!message.finishReason) return
+
+  switch (message.finishReason) {
+    case 'content-filter':
+      upsertAssistantFinishNotice(message, '⚠️ The provider blocked or truncated the final response with a content filter.')
+      break
+    case 'length':
+      upsertAssistantFinishNotice(message, '⚠️ The model stopped before completing the final response.')
+      break
+    default:
+      break
+  }
+}
+
 function reconcileAssistantParts(currentParts: MessagePart[], remoteParts: MessagePart[]): MessagePart[] {
   if (remoteParts.length === 0) return currentParts
 
@@ -218,6 +251,7 @@ function reconcileAssistantParts(currentParts: MessagePart[], remoteParts: Messa
 async function reconcileAssistantMessage(
   client: Record<string, unknown>,
   sessionId: string,
+  turnUserMessageId: string,
   aiMsg: RichMessage,
 ): Promise<string | null> {
   try {
@@ -228,14 +262,11 @@ async function reconcileAssistantMessage(
     }))
     if (result.error) return null
     const rawMessages = Array.isArray(result.data) ? (result.data as Array<Record<string, unknown>>) : []
-    const latestUserMessageId = [...rawMessages]
-      .reverse()
-      .map((item) => asRecord(item.info))
-      .find((item) => asString(item.role) === 'user')
-    const lastUserId = latestUserMessageId ? asString(latestUserMessageId.id) ?? null : null
-
-    const assistants = rawMessages.filter((m) => asString(asRecord(m.info).role) === 'assistant')
-    if (!assistants.length) return lastUserId
+    const assistants = rawMessages.filter((message) => {
+      const info = asRecord(message.info)
+      return asString(info.role) === 'assistant' && asString(info.parentID) === turnUserMessageId
+    })
+    if (!assistants.length) return turnUserMessageId
 
     const target = assistants[assistants.length - 1]
     const mapped = mapRemoteMessage(target)
@@ -243,6 +274,8 @@ async function reconcileAssistantMessage(
     // Final reconcile should repair durable state without deleting live-only
     // process parts that some backends omit from stored messages.
     aiMsg.id = mapped.id
+    aiMsg.parentId = mapped.parentId
+    aiMsg.finishReason = mapped.finishReason
     if (mapped.modelInfo) aiMsg.modelInfo = mapped.modelInfo
     if (mapped.createdAt) aiMsg.createdAt = mapped.createdAt
     if (mapped.tokens) aiMsg.tokens = mapped.tokens
@@ -251,7 +284,8 @@ async function reconcileAssistantMessage(
     if (mapped.parts.length > 0) {
       aiMsg.parts = reconcileAssistantParts(aiMsg.parts, mapped.parts)
     }
-    return lastUserId
+    ensureAssistantCompletionNotice(aiMsg)
+    return turnUserMessageId
   } catch (e: unknown) {
     console.warn('[useChat] reconcile failed (best effort):', e)
     return null
@@ -440,8 +474,8 @@ export function useChat(
       const summary = asRecord(data.summary)
       const restoredDiffs = Array.isArray(summary.diffs)
         ? summary.diffs
-            .map(parseFileDiffRecord)
-            .filter((item): item is FileDiffRecord => item !== null)
+          .map(parseFileDiffRecord)
+          .filter((item): item is FileDiffRecord => item !== null)
         : []
 
       restoredSessionFiles.value = restoredDiffs.map((diff) =>
@@ -636,12 +670,13 @@ export function useChat(
       userParts.push({ id: nextId(), type: 'command', command: { name: input.commandRef.name, source: input.commandRef.source } })
     }
 
-    const turnId = nextId()
+    const turnUserMessageId = nextRemoteMessageId()
+    const turnId = turnUserMessageId
     const userMsg: RichMessage = {
-      id: nextId(), turnId, role: 'user', parts: userParts, createdAt: nowISO(), streaming: false,
+      id: turnUserMessageId, turnId, role: 'user', parts: userParts, createdAt: nowISO(), streaming: false,
     }
     const aiMsg: RichMessage = {
-      id: nextId(), turnId, role: 'assistant', parts: [], createdAt: nowISO(), streaming: true,
+      id: nextId(), turnId, role: 'assistant', parts: [], createdAt: nowISO(), streaming: true, parentId: turnUserMessageId,
     }
 
     messages.value = [...messages.value, userMsg, aiMsg]
@@ -677,7 +712,7 @@ export function useChat(
     activeStreamClient = currentClient
     let promptAccepted = false
     const artifactBaseline = await captureArtifactBaseline(currentClient)
-    const streamState: StreamState = createStreamState()
+    const streamState: StreamState = createStreamState(turnUserMessageId)
     let finalizedArtifacts = false
     let resolvedUserMessageId: string | null = null
 
@@ -726,38 +761,21 @@ export function useChat(
       const eventNs = asRecord(currentClient.event)
       if (typeof eventNs.subscribe !== 'function') throw new Error('SDK client missing event.subscribe()')
       let lastEventId: string | null = null
-
-      const subscribeEventStream = async (attemptLabel: string): Promise<AsyncGenerator<unknown>> => {
-        const options: Record<string, unknown> = {
-          signal: abortCtl.signal,
-          onSseEvent: (evt: unknown) => {
-            const evtId = asString(asRecord(evt).id)
-            if (evtId) lastEventId = evtId
-          },
-        }
-        if (lastEventId) {
-          options.headers = { 'Last-Event-ID': lastEventId }
-        }
-
-
-        const subResult = await (eventNs.subscribe as (params?: unknown, options?: unknown) => Promise<unknown>)(undefined, options)
-        const sub = asRecord(subResult)
-
-        if (sub.error) {
-          const errData = asRecord(sub.error)
-          throw new Error(asString(errData.message) ?? 'Failed to subscribe to event stream')
-        }
-        const stream = sub.stream ?? asRecord(sub.data).stream ?? subResult
-        if (!stream) throw new Error('event.subscribe() returned no stream')
-        if (typeof stream !== 'object' || stream === null || !(Symbol.asyncIterator in stream)) {
-          throw new Error('event.subscribe() returned a non-async stream')
-        }
-
-        return stream as AsyncGenerator<unknown>
+      const updateLastEventId = (eventId: string) => {
+        lastEventId = eventId
       }
+      const subscribeEventApi = (params?: unknown, options?: unknown) =>
+        (eventNs.subscribe as (params?: unknown, options?: unknown) => Promise<unknown>).call(eventNs, params, options)
+      const subscribeEventStream = async (): Promise<AsyncGenerator<unknown>> =>
+        subscribePrimedEventStream({
+          subscribe: subscribeEventApi,
+          signal: abortCtl.signal,
+          lastEventId,
+          onEventId: updateLastEventId,
+        })
 
-      const consumeWithReconnect = async (): Promise<string | null> => {
-        let stream = await subscribeEventStream('initial')
+      const consumeWithReconnect = async (initialStream: AsyncGenerator<unknown>): Promise<string | null> => {
+        let stream = initialStream
         let reconnectAttempt = 0
 
         while (true) {
@@ -816,28 +834,31 @@ export function useChat(
               lastEventId,
             })
             await waitAbortable(backoff, abortCtl.signal)
-            stream = await subscribeEventStream(`reconnect-${reconnectAttempt}`)
+            stream = await subscribeEventStream()
           }
         }
       }
 
-      // Start consuming events
-      const streamConsumer = consumeWithReconnect()
-      const streamConsumerTask = streamConsumer
+      const initialStream = await subscribeEventStream()
+      const streamConsumerTask = consumeWithReconnect(initialStream)
       // Attach a handler immediately to prevent transient unhandledrejection before awaited joins.
       void streamConsumerTask.catch(() => undefined)
 
       // Fire the prompt or command.
-      // IMPORTANT: promptDispatched MUST be set AFTER the HTTP call returns
-      // to prevent the SSE consumer from processing stale session events
-      // (e.g. previous assistant messages) while the request is in flight.
+      // The initial SSE stream is primed before dispatch, so the server has
+      // already sent `server.connected` and registered our subscriber.
       const sessionNs = asRecord(currentClient.session)
+      const armStreamDispatch = () => {
+        streamState.dispatchStarted = true
+        streamState.completionArmed = true
+      }
 
       if (input.commandRef) {
         // Command/skill dispatch via session.command()
         if (typeof sessionNs.command !== 'function') throw new Error('SDK client missing session.command()')
         const commandPayload: Record<string, unknown> = {
           sessionID: currentSid,
+          messageID: turnUserMessageId,
           command: input.commandRef.name,
           arguments: text || undefined,
         }
@@ -846,6 +867,7 @@ export function useChat(
         }
         if (currentVariant) commandPayload.variant = currentVariant
 
+        armStreamDispatch()
         const cmdResult = await (sessionNs.command as (params: unknown, options?: unknown) => Promise<unknown>)(
           commandPayload, { signal: abortCtl.signal },
         )
@@ -858,12 +880,14 @@ export function useChat(
         if (typeof sessionNs.promptAsync !== 'function') throw new Error('SDK client missing session.promptAsync()')
         const promptPayload: Record<string, unknown> = {
           sessionID: currentSid,
+          messageID: turnUserMessageId,
           parts: promptParts,
         }
         // Model comes from config.json global `model` — no need to pass in body.
         // Variant (thinking depth) is passed if the user selected one.
         if (currentVariant) promptPayload.variant = currentVariant
 
+        armStreamDispatch()
         const promptResult = await (sessionNs.promptAsync as (params: unknown, options?: unknown) => Promise<unknown>)(
           promptPayload, { signal: abortCtl.signal },
         )
@@ -872,16 +896,14 @@ export function useChat(
           throw new Error(extractSdkErrorMessage(promptRec.error, 'Prompt request failed'))
         }
       }
-      // Now the backend has accepted our request — safe to process SSE events
-      streamState.promptDispatched = true
       promptAccepted = true
-      streamState.completionArmed = true
 
       await streamConsumerTask
 
-      resolvedUserMessageId = await reconcileAssistantMessage(currentClient, currentSid, aiMsg)
+      resolvedUserMessageId = await reconcileAssistantMessage(currentClient, currentSid, turnUserMessageId, aiMsg)
       syncTurnMessageId(turnId, aiMsg.id)
       await finalizeArtifacts()
+      ensureAssistantCompletionNotice(aiMsg)
 
       if (aiMsg.parts.length === 0) {
         aiMsg.parts = [{ id: nextId(), type: 'text', text: '(No response)' }]
@@ -889,7 +911,7 @@ export function useChat(
     } catch (error: unknown) {
       if (!cancelRequested && !isAbortError(error)) {
         if (promptAccepted) {
-          resolvedUserMessageId = await reconcileAssistantMessage(currentClient, currentSid, aiMsg)
+          resolvedUserMessageId = await reconcileAssistantMessage(currentClient, currentSid, turnUserMessageId, aiMsg)
           syncTurnMessageId(turnId, aiMsg.id)
           try {
             await finalizeArtifacts()
@@ -1020,6 +1042,8 @@ function mapRemoteMessage(raw: Record<string, unknown>): RichMessage {
   const id = String(info.id ?? nextId())
 
   const role = String(info.role ?? 'assistant')
+  const parentId = asString(info.parentID) ?? undefined
+  const finishReason = asString(info.finish) ?? undefined
   const time = asRecord(info.time)
   const created = time.created
   const createdAt =
@@ -1097,15 +1121,20 @@ function mapRemoteMessage(raw: Record<string, unknown>): RichMessage {
     }
   }
 
-  return {
+  const message: RichMessage = {
     id,
     turnId: id,
     role: role === 'user' ? 'user' : 'assistant',
     parts,
+    parentId,
+    finishReason,
     modelInfo: providerID && modelID ? { providerID, modelID } : undefined,
     tokens: totalTokens,
     cost: totalCost,
     createdAt,
     streaming: false,
   }
+
+  ensureAssistantCompletionNotice(message)
+  return message
 }

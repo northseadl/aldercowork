@@ -24,25 +24,29 @@ export interface PermissionRequest {
 export type PermissionResolver = (request: PermissionRequest) => PermissionDecision | Promise<PermissionDecision>
 
 export interface StreamState {
-    promptDispatched: boolean
+    dispatchStarted: boolean
     completionArmed: boolean
     sawActivity: boolean
+    turnObserved: boolean
+    turnUserMessageId: string
     assistantMessageId: string | null
     latestUserMessageId: string | null
-    skippedMessageIds: Set<string>
+    assistantMessageIds: Set<string>
     partLookup: Map<string, MessagePart>
     respondedPermissionIds: Set<string>
     respondedQuestionIds: Set<string>
 }
 
-export function createStreamState(): StreamState {
+export function createStreamState(turnUserMessageId: string): StreamState {
     return {
-        promptDispatched: false,
+        dispatchStarted: false,
         completionArmed: false,
         sawActivity: false,
+        turnObserved: false,
+        turnUserMessageId,
         assistantMessageId: null,
-        latestUserMessageId: null,
-        skippedMessageIds: new Set(),
+        latestUserMessageId: turnUserMessageId,
+        assistantMessageIds: new Set(),
         partLookup: new Map(),
         respondedPermissionIds: new Set(),
         respondedQuestionIds: new Set(),

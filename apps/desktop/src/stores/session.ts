@@ -29,6 +29,7 @@ export interface ToolCallState {
   name: string
   input: string
   output?: string
+  error?: string
   status: ToolStatus
   title?: string
   attachments?: FileInfo[]
@@ -108,6 +109,8 @@ export interface RichMessage {
   turnId: string
   role: MessageRole
   parts: MessagePart[]
+  parentId?: string
+  finishReason?: string
   modelInfo?: { providerID: string; modelID: string }
   tokens?: TokenInfo
   cost?: number

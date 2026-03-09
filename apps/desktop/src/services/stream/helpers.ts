@@ -3,9 +3,45 @@
  */
 
 let _nextId = 0
+let _remoteMessageTimestamp = 0
+let _remoteMessageCounter = 0
+
+const REMOTE_ID_RANDOM_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+const REMOTE_ID_RANDOM_LENGTH = 14
 
 export function nextId(): string {
     return `msg-${Date.now()}-${++_nextId}`
+}
+
+function randomBase62(length: number): string {
+    const bytes = new Uint8Array(length)
+    const cryptoObj = globalThis.crypto
+    if (cryptoObj?.getRandomValues) {
+        cryptoObj.getRandomValues(bytes)
+    } else {
+        for (let i = 0; i < length; i++) {
+            bytes[i] = Math.floor(Math.random() * 256)
+        }
+    }
+
+    let result = ''
+    for (let i = 0; i < length; i++) {
+        result += REMOTE_ID_RANDOM_CHARS[bytes[i] % REMOTE_ID_RANDOM_CHARS.length]
+    }
+    return result
+}
+
+export function nextRemoteMessageId(): string {
+    const currentTimestamp = Date.now()
+    if (currentTimestamp !== _remoteMessageTimestamp) {
+        _remoteMessageTimestamp = currentTimestamp
+        _remoteMessageCounter = 0
+    }
+    _remoteMessageCounter += 1
+
+    const encoded = BigInt(currentTimestamp) * 0x1000n + BigInt(_remoteMessageCounter)
+    const timeHex = encoded.toString(16).padStart(12, '0')
+    return `msg_${timeHex}${randomBase62(REMOTE_ID_RANDOM_LENGTH)}`
 }
 
 export function nowISO(): string {

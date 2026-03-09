@@ -12,6 +12,7 @@ export interface SkillCardData {
   summary?: string
   input?: string
   output?: string
+  error?: string
   icon?: string
 }
 

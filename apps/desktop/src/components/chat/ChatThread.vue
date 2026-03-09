@@ -107,7 +107,7 @@ function partRenderSignature(part: MessagePart): string {
     return `${part.type}:${part.text?.length ?? 0}`
   }
   if (part.type === 'tool') {
-    return `${part.type}:${part.tool?.status ?? 'pending'}:${part.tool?.title?.length ?? 0}:${part.tool?.output?.length ?? 0}`
+    return `${part.type}:${part.tool?.status ?? 'pending'}:${part.tool?.title?.length ?? 0}:${part.tool?.output?.length ?? 0}:${part.tool?.error?.length ?? 0}`
   }
   if (part.type === 'file') {
     return `${part.type}:${part.file?.filename?.length ?? 0}:${part.file?.url?.length ?? 0}`
@@ -216,6 +216,7 @@ onMounted(() => { void scrollToBottom(true) })
                 :summary="vp.part.tool?.title"
                 :input="vp.part.tool?.input"
                 :output="vp.part.tool?.output"
+                :error="vp.part.tool?.error"
               />
             </div>
 
