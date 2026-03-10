@@ -109,6 +109,12 @@ impl KernelManager {
         // Tell OpenCode it's running inside a desktop client
         command = command.env("OPENCODE_CLIENT", "desktop");
 
+        // Disable OpenCode's built-in external skill discovery.
+        // Without this, OpenCode scans ~/.claude/skills/, ~/.agents/skills/
+        // and walks up from CWD looking for .claude/ and .agents/ directories.
+        // AlderCowork manages its own skill pipeline via config.json skills.paths.
+        command = command.env("OPENCODE_DISABLE_EXTERNAL_SKILLS", "1");
+
         // Inject stored provider env (persisted across restarts)
         if let Some(ref stored_env) = self.provider_env {
             for (key, value) in stored_env {
