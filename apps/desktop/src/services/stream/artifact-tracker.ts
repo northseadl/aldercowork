@@ -91,6 +91,19 @@ function cloneOutcome(outcome: FileOutcome): FileOutcome {
   return { ...outcome }
 }
 
+/**
+ * Normalize workspace-relative paths so that different representations
+ * of the same file (e.g. `./foo.md` vs `foo.md`, backslashes on Windows)
+ * always produce the same Map key.
+ */
+function normalizePath(raw: string): string {
+  return raw
+    .replace(/\\/g, '/')
+    .replace(/\/+/g, '/')
+    .replace(/^\.\//, '')
+    .replace(/\/$/, '')
+}
+
 function normalizeOutcomeStatus(status: FileDiffRecord['status'] | undefined): FileOutcome['status'] {
   if (status === 'added' || status === 'deleted' || status === 'modified') return status
   return 'modified'
@@ -161,7 +174,7 @@ async function collectWorkspacePaths(client: ClientRecord): Promise<{ paths: Set
         continue
       }
 
-      discovered.add(entryPath)
+      discovered.add(normalizePath(entryPath))
       if (discovered.size >= SNAPSHOT_MAX_FILES) {
         truncated = true
         break
@@ -185,9 +198,10 @@ async function collectGitStatus(client: ClientRecord): Promise<{ available: bool
 
     const statusMap = new Map<string, GitStatusRecord>()
     for (const item of extractArrayResponse<Record<string, unknown>>(response)) {
-      const path = asString(item.path)
+      const rawPath = asString(item.path)
       const status = item.status
-      if (!path || !isGitStatus(status)) continue
+      if (!rawPath || !isGitStatus(status)) continue
+      const path = normalizePath(rawPath)
       statusMap.set(path, {
         path,
         status,
@@ -259,7 +273,7 @@ function finalizeOutcome(outcome: FileOutcome): FileOutcome {
 
 function createGitOutcome(record: GitStatusRecord, turnId: string, messageId: string): FileOutcome {
   return {
-    path: record.path,
+    path: normalizePath(record.path),
     status: normalizeOutcomeStatus(record.status),
     additions: record.additions,
     deletions: record.deletions,
@@ -278,7 +292,7 @@ function createSnapshotOutcome(
   messageId: string,
 ): FileOutcome {
   return {
-    path,
+    path: normalizePath(path),
     status,
     additions: 0,
     deletions: 0,
@@ -388,7 +402,7 @@ export function parseFileDiffRecord(source: unknown): FileDiffRecord | null {
 
 export function createProcessingOutcome(path: string, turnId: string, messageId: string): FileOutcome {
   return {
-    path,
+    path: normalizePath(path),
     status: 'processing',
     additions: 0,
     deletions: 0,
@@ -407,7 +421,7 @@ export function createOutcomeFromDiff(
   source: FileOutcomeSource,
 ): FileOutcome {
   return {
-    path: diff.file,
+    path: normalizePath(diff.file),
     status: normalizeOutcomeStatus(diff.status),
     additions: diff.additions,
     deletions: diff.deletions,
@@ -420,8 +434,9 @@ export function createOutcomeFromDiff(
 }
 
 export function createOutcomeFromAttachment(file: FileInfo, turnId: string, messageId: string): FileOutcome | null {
-  const path = file.path ?? file.filename
-  if (!path) return null
+  const raw = file.path ?? file.filename
+  if (!raw) return null
+  const path = normalizePath(raw)
 
   return {
     path,
@@ -470,7 +485,9 @@ export function buildSessionArtifactSummary(
     .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime())
 
   for (const item of touches) {
-    merged.set(item.path, cloneOutcome(item))
+    const path = normalizePath(item.path)
+    const entry = path === item.path ? item : { ...item, path }
+    merged.set(path, mergeOutcome(merged.get(path), entry))
   }
 
   const files = [...merged.values()].sort(
