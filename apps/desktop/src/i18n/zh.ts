@@ -44,6 +44,7 @@ const zh = {
             starting: '正在启动引擎…',
             error: '引擎启动失败，请重启应用。',
             stopped: '内核已停止。',
+            loading: '正在恢复会话…',
         },
         attachFile: '添加附件',
         streaming: 'AlderCowork 正在思考…',
