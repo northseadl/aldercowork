@@ -43,6 +43,7 @@ const en: MessageSchema = {
             starting: 'Starting engine…',
             error: 'Engine failed to start. Please restart the application.',
             stopped: 'Kernel stopped.',
+            loading: 'Restoring session…',
         },
         attachFile: 'Attach file',
         streaming: 'AlderCowork is thinking…',

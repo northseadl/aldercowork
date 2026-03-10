@@ -78,13 +78,14 @@ async function reloadSettingsStore() {
 }
 
 function resetSessionStoreForProfile() {
+  const restoredId = settingsStore.lastActiveSessionId ?? undefined
   if (hasStoreMethod(sessionStore, 'resetForProfile')) {
-    sessionStore.resetForProfile()
+    sessionStore.resetForProfile(restoredId)
     return
   }
 
   sessionStore.sessions = []
-  sessionStore.activeSessionId = ''
+  sessionStore.activeSessionId = restoredId ?? ''
   sessionStore.error = null
   sessionStore.loading = false
   sessionStore.creating = false
@@ -188,6 +189,13 @@ const { status: kernelStatus, version: kernelVersion, error: kernelError } = ker
 // Previously this was buried inside ChatView, making sessionStore.client null on other routes.
 const { client: globalSdkClient } = useClient(kernel.port, computed(() => workspaceStore.activePath))
 watch(globalSdkClient, (c) => sessionStore.setClient(c), { immediate: true })
+
+// Persist active session ID so it can be restored on next launch
+watch(() => sessionStore.activeSessionId, (id) => {
+  if (id && !id.startsWith('local-')) {
+    settingsStore.setLastActiveSessionId(id)
+  }
+})
 
 // Welcome screen — shown on first launch only.
 // Must wait for settings to load from disk before deciding.

@@ -232,7 +232,8 @@ export const useSessionStore = defineStore('session', () => {
       const sorted = sortSessionsByUpdatedAt(remoteSessions)
       sessions.value = sorted
 
-      if (activeSessionId.value && !sorted.some((s) => s.id === activeSessionId.value)) {
+      // Auto-select: restore persisted session if valid, otherwise fallback to most recent
+      if (!activeSessionId.value || !sorted.some((s) => s.id === activeSessionId.value)) {
         activeSessionId.value = sorted[0]?.id ?? ''
       }
     } catch (e: unknown) {
@@ -391,9 +392,9 @@ export const useSessionStore = defineStore('session', () => {
     }
   })
 
-  function resetForProfile() {
+  function resetForProfile(restoredSessionId?: string) {
     sessions.value = []
-    activeSessionId.value = ''
+    activeSessionId.value = restoredSessionId ?? ''
     error.value = null
     loading.value = false
     creating.value = false

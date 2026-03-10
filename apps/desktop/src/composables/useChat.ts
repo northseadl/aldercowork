@@ -309,6 +309,7 @@ export function useChat(
 ) {
   const messages = ref<RichMessage[]>([])
   const isStreaming = ref(false)
+  const isLoadingMessages = ref(false)
   const streamError = ref<string | null>(null)
   const sessionStatus = ref<SessionStatusType>(null)
   const turnArtifacts = ref<Record<string, TurnArtifactSummary>>({})
@@ -558,12 +559,13 @@ export function useChat(
   async function loadMessages(targetSid: string = sessionId.value) {
     const c = client.value
     const sid = targetSid
-    if (!c || !sid || sid.startsWith('local-')) { messages.value = []; return }
+    if (!c || !sid || sid.startsWith('local-')) { messages.value = []; isLoadingMessages.value = false; return }
     if (isStreaming.value && sid === activeStreamSessionId) return
 
     const thisGen = ++loadGeneration
     artifactLoadGeneration += 1
     const artifactGen = artifactLoadGeneration
+    isLoadingMessages.value = true
 
     try {
       const sessionNs = asRecord(asRecord(c).session)
@@ -589,7 +591,8 @@ export function useChat(
       restoredSessionFiles.value = []
       latestCompletedTurnId.value = null
       sessionArtifacts.value = createEmptySessionArtifactSummary()
-      await loadSessionArtifacts(sid, artifactGen)
+      // Fire artifact loading in parallel — generation guard prevents stale writes
+      void loadSessionArtifacts(sid, artifactGen)
     } catch (error: unknown) {
       if (thisGen !== loadGeneration) return
       if (sessionId.value !== sid) return
@@ -598,6 +601,10 @@ export function useChat(
       turnArtifacts.value = {}
       restoredSessionFiles.value = []
       setArtifactError(normalizeError(error))
+    } finally {
+      if (thisGen === loadGeneration) {
+        isLoadingMessages.value = false
+      }
     }
   }
 
@@ -711,6 +718,18 @@ export function useChat(
     activeStreamSessionId = currentSid
     activeStreamClient = currentClient
     let promptAccepted = false
+
+    // Abort any stale session state left over from a previous turn that was
+    // interrupted (e.g. by an app restart). Without this, promptAsync() may
+    // block indefinitely waiting for the previous turn to complete on the
+    // backend. Best-effort — ignore failures.
+    try {
+      const preSessionNs = asRecord(currentClient.session)
+      if (typeof preSessionNs.abort === 'function') {
+        await (preSessionNs.abort as (opts: unknown) => Promise<unknown>)({ sessionID: currentSid })
+      }
+    } catch { /* best effort */ }
+
     const artifactBaseline = await captureArtifactBaseline(currentClient)
     const streamState: StreamState = createStreamState(turnUserMessageId)
     let finalizedArtifacts = false
@@ -1022,6 +1041,7 @@ export function useChat(
   return {
     messages,
     isStreaming,
+    isLoadingMessages,
     streamError,
     sessionStatus,
     turnArtifacts,

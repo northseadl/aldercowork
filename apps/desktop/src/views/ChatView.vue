@@ -43,6 +43,7 @@ async function resolvePermissionRequest(request: PermissionRequest): Promise<Per
 const {
   messages: chatMessages,
   isStreaming,
+  isLoadingMessages,
   streamError,
   turnArtifacts,
   sessionArtifacts,
@@ -567,27 +568,35 @@ function attachmentDisplayName(att: FileAttachment): string {
   <section class="chat-view">
     <template v-if="displayMessages.length === 0 && !isStreaming">
       <div class="chat-empty">
-        <div class="chat-empty__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none">
-            <rect x="0" y="0" width="19.5" height="19.5" rx="4.5" fill="var(--brand)" opacity=".45" />
-            <rect x="4.5" y="4.5" width="19.5" height="19.5" rx="4.5" fill="var(--brand)" opacity=".75" />
-          </svg>
-        </div>
-        <h2 class="chat-empty__title">{{ t('chat.empty.title') }}</h2>
-        <p class="chat-empty__desc">{{ t('chat.empty.desc') }}</p>
+        <template v-if="isLoadingMessages || sessionStore.loading">
+          <div class="chat-empty__status is-starting">
+            <span class="chat-empty__dot" />
+            <span>{{ t('chat.empty.loading') }}</span>
+          </div>
+        </template>
+        <template v-else>
+          <div class="chat-empty__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <rect x="0" y="0" width="19.5" height="19.5" rx="4.5" fill="var(--brand)" opacity=".45" />
+              <rect x="4.5" y="4.5" width="19.5" height="19.5" rx="4.5" fill="var(--brand)" opacity=".75" />
+            </svg>
+          </div>
+          <h2 class="chat-empty__title">{{ t('chat.empty.title') }}</h2>
+          <p class="chat-empty__desc">{{ t('chat.empty.desc') }}</p>
 
-        <div v-if="kernelStatus === 'starting'" class="chat-empty__status is-starting">
-          <span class="chat-empty__dot" />
-          <span>{{ t('chat.empty.starting') }}</span>
-        </div>
-        <div v-else-if="kernelStatus === 'error'" class="chat-empty__status is-error">
-          <span class="chat-empty__dot" />
-          <span>{{ t('chat.empty.error') }}</span>
-        </div>
-        <div v-else-if="kernelStatus === 'stopped'" class="chat-empty__status">
-          <span class="chat-empty__dot" />
-          <span>{{ t('chat.empty.stopped') }}</span>
-        </div>
+          <div v-if="kernelStatus === 'starting'" class="chat-empty__status is-starting">
+            <span class="chat-empty__dot" />
+            <span>{{ t('chat.empty.starting') }}</span>
+          </div>
+          <div v-else-if="kernelStatus === 'error'" class="chat-empty__status is-error">
+            <span class="chat-empty__dot" />
+            <span>{{ t('chat.empty.error') }}</span>
+          </div>
+          <div v-else-if="kernelStatus === 'stopped'" class="chat-empty__status">
+            <span class="chat-empty__dot" />
+            <span>{{ t('chat.empty.stopped') }}</span>
+          </div>
+        </template>
       </div>
     </template>
 

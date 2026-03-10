@@ -114,6 +114,7 @@ interface PersistedSettings {
     providers: Record<string, Omit<ProviderState, 'id'>>
     recentWorkspaces: WorkspacePersisted[]
     activeWorkspaceId: string | null
+    lastActiveSessionId: string | null
 }
 
 const DEFAULTS: PersistedSettings = {
@@ -124,6 +125,7 @@ const DEFAULTS: PersistedSettings = {
     providers: {},
     recentWorkspaces: [],
     activeWorkspaceId: null,
+    lastActiveSessionId: null,
 }
 
 
@@ -160,6 +162,9 @@ function parseSettings(raw: string): PersistedSettings {
                 : [],
             activeWorkspaceId: typeof parsed.activeWorkspaceId === 'string'
                 ? parsed.activeWorkspaceId
+                : null,
+            lastActiveSessionId: typeof parsed.lastActiveSessionId === 'string'
+                ? parsed.lastActiveSessionId
                 : null,
         }
     } catch {
@@ -203,6 +208,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const providerStates = ref<Record<string, Omit<ProviderState, 'id'>>>({})
     const recentWorkspaces = ref<WorkspacePersisted[]>([])
     const activeWorkspaceId = ref<string | null>(null)
+    const lastActiveSessionId = ref<string | null>(null)
     const loaded = ref(false)
 
     // --- Init: load from file, with localStorage migration ---
@@ -244,6 +250,7 @@ export const useSettingsStore = defineStore('settings', () => {
         providerStates.value = settings.providers
         recentWorkspaces.value = settings.recentWorkspaces
         activeWorkspaceId.value = settings.activeWorkspaceId
+        lastActiveSessionId.value = settings.lastActiveSessionId
     }
 
     function currentSnapshot(): PersistedSettings {
@@ -255,6 +262,7 @@ export const useSettingsStore = defineStore('settings', () => {
             providers: providerStates.value,
             recentWorkspaces: recentWorkspaces.value,
             activeWorkspaceId: activeWorkspaceId.value,
+            lastActiveSessionId: lastActiveSessionId.value,
         }
     }
 
@@ -342,10 +350,14 @@ export const useSettingsStore = defineStore('settings', () => {
         activeWorkspaceId.value = activeId
     }
 
+    function setLastActiveSessionId(id: string | null) {
+        lastActiveSessionId.value = id
+    }
+
     // --- Persistence watcher — auto-save to file on any change ---
 
     watch(
-        [mode, configured, defaultProvider, providerStates, recentWorkspaces, activeWorkspaceId],
+        [mode, configured, defaultProvider, providerStates, recentWorkspaces, activeWorkspaceId, lastActiveSessionId],
         () => {
             if (loaded.value) {
                 void persist()
@@ -386,6 +398,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
         markConfigured,
         setWorkspaceState,
+        lastActiveSessionId,
+        setLastActiveSessionId,
 
     }
 })
