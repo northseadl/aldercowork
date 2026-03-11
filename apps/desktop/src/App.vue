@@ -28,6 +28,7 @@ const routeByNav: Record<AppNavId, string> = {
   sessions: '/',
   skills: '/skills',
   runbooks: '/runbooks',
+  workflow: '/workflow',
   settings: '/settings',
 }
 
@@ -35,6 +36,7 @@ const navByRoute: Record<string, AppNavId> = {
   '/': 'sessions',
   '/skills': 'skills',
   '/runbooks': 'runbooks',
+  '/workflow': 'workflow',
   '/settings': 'settings',
 }
 
@@ -327,6 +329,12 @@ const navItems = computed<SidebarNavItem[]>(() => [
     icon: 'M12 20h9|M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z',
     shortcut: '⌘3',
   },
+  {
+    id: 'workflow',
+    label: t('nav.workflow'),
+    icon: 'M22 12h-4l-3 9L9 3l-3 9H2',
+    shortcut: '⌘4',
+  },
 ])
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => {
@@ -340,6 +348,10 @@ const breadcrumbs = computed<BreadcrumbItem[]>(() => {
     return [{ label: t('nav.runbooks'), current: true }]
   }
 
+  if (currentNav === 'workflow') {
+    return [{ label: t('nav.workflow'), current: true }]
+  }
+
   if (currentNav === 'settings') {
     return [{ label: t('nav.settings'), current: true }]
   }
@@ -351,7 +363,7 @@ const breadcrumbs = computed<BreadcrumbItem[]>(() => {
 })
 
 const isAppNavId = (value: string): value is AppNavId => {
-  return value === 'sessions' || value === 'skills' || value === 'runbooks' || value === 'settings'
+  return value === 'sessions' || value === 'skills' || value === 'runbooks' || value === 'workflow' || value === 'settings'
 }
 
 const navigateTo = (nav: AppNavId) => {
@@ -398,6 +410,7 @@ useKeyboard({
   '1': () => navigateTo('sessions'),
   '2': () => navigateTo('skills'),
   '3': () => navigateTo('runbooks'),
+  '4': () => navigateTo('workflow'),
 })
 
 const showCommandPalette = ref(false)

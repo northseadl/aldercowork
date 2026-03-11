@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, Transition, watch } from 'vue'
 
 import ArtifactBand from './ArtifactBand.vue'
 import ArtifactShelf from './ArtifactShelf.vue'
@@ -233,8 +233,19 @@ onMounted(() => { void scrollToBottom(true) })
             />
 
             <!-- Command/skill reference chip -->
-            <div v-else-if="vp.vtype === 'command'" class="command-chip">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <!-- Command/skill/workflow/runbook reference chip -->
+            <div v-else-if="vp.vtype === 'command'" class="command-chip" :class="`command-chip--${vp.part.command?.source ?? 'command'}`">
+              <!-- Workflow icon: activity/flow -->
+              <svg v-if="vp.part.command?.source === 'workflow'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+              <!-- Runbook icon: clipboard/list -->
+              <svg v-else-if="vp.part.command?.source === 'runbook'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+              </svg>
+              <!-- Default: lightning bolt (skill/command/mcp) -->
+              <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
               <span class="command-chip__name">{{ vp.part.command?.name }}</span>
@@ -267,6 +278,20 @@ onMounted(() => { void scrollToBottom(true) })
       </div>
     </div>
 
+    <!-- Scroll-to-bottom FAB — shown when user has scrolled up -->
+    <Transition name="fab-fade">
+      <button
+        v-if="isUserScrolledUp"
+        type="button"
+        class="scroll-to-bottom"
+        @click="scrollToBottom(true)"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+    </Transition>
+
     <div v-if="$slots.compose" class="compose-slot">
       <slot name="compose" />
     </div>
@@ -279,6 +304,7 @@ onMounted(() => { void scrollToBottom(true) })
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .conversation {
@@ -345,6 +371,20 @@ onMounted(() => { void scrollToBottom(true) })
   flex-shrink: 0;
 }
 
+/* Workflow variant — brand color */
+.command-chip--workflow {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  border-color: color-mix(in srgb, var(--brand) 25%, transparent);
+}
+.command-chip--workflow svg { color: var(--brand); }
+
+/* Runbook variant — green/success color */
+.command-chip--runbook {
+  background: color-mix(in srgb, var(--color-success, #22c55e) 12%, transparent);
+  border-color: color-mix(in srgb, var(--color-success, #22c55e) 25%, transparent);
+}
+.command-chip--runbook svg { color: var(--color-success, #22c55e); }
+
 .command-chip__name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -374,4 +414,42 @@ onMounted(() => { void scrollToBottom(true) })
 
 .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
 .thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* ── Scroll-to-bottom FAB ── */
+.scroll-to-bottom {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 10;
+  transition: background var(--speed-quick), color var(--speed-quick), box-shadow var(--speed-quick);
+}
+
+.scroll-to-bottom:hover {
+  background: var(--surface-hover);
+  color: var(--text-1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.fab-fade-enter-active,
+.fab-fade-leave-active {
+  transition: opacity 0.2s var(--ease), transform 0.2s var(--ease);
+}
+
+.fab-fade-enter-from,
+.fab-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
+}
 </style>

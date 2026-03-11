@@ -142,10 +142,14 @@ export interface FileReference {
   source: FileReferenceSource
 }
 
-/** A command/skill reference — dispatched via session.command() instead of promptAsync(). */
+/**
+ * A command/skill/workflow/runbook reference.
+ * - command/mcp/skill: dispatched via session.command()
+ * - workflow/runbook: template-based, dispatched via session.promptAsync()
+ */
 export interface CommandReference {
   name: string
-  source: 'command' | 'mcp' | 'skill'
+  source: 'command' | 'mcp' | 'skill' | 'workflow' | 'runbook'
   template: string
 }
 
@@ -168,6 +172,40 @@ export interface SessionSummary {
   provider: string
   model: string
   updatedAt: string
+}
+
+const PENDING_PROMPT_STORAGE_KEY = 'aldercowork:pending-prompt'
+
+function normalizePendingPrompt(value: unknown): PromptInput | null {
+  if (!value || typeof value !== 'object') return null
+  const prompt = value as PromptInput
+  return typeof prompt.text === 'string' ? prompt : null
+}
+
+function loadPendingPromptFromStorage(): PromptInput | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_PROMPT_STORAGE_KEY)
+    if (!raw) return null
+    return normalizePendingPrompt(JSON.parse(raw))
+  } catch {
+    return null
+  }
+}
+
+function persistPendingPromptToStorage(prompt: PromptInput | null) {
+  if (typeof window === 'undefined') return
+
+  try {
+    if (prompt) {
+      window.sessionStorage.setItem(PENDING_PROMPT_STORAGE_KEY, JSON.stringify(prompt))
+    } else {
+      window.sessionStorage.removeItem(PENDING_PROMPT_STORAGE_KEY)
+    }
+  } catch {
+    // Best effort only — in-memory handoff remains the primary path.
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -392,24 +430,32 @@ export const useSessionStore = defineStore('session', () => {
     }
   })
 
+  function clearPendingPrompt() {
+    pendingPrompt.value = null
+    persistPendingPromptToStorage(null)
+  }
+
   function resetForProfile(restoredSessionId?: string) {
     sessions.value = []
     activeSessionId.value = restoredSessionId ?? ''
     error.value = null
     loading.value = false
     creating.value = false
-    pendingPrompt.value = null
+    clearPendingPrompt()
   }
 
   /** Deposit a prompt to be consumed by ChatView after navigation. */
-  function setPendingPrompt(prompt: PromptInput) {
+  function setPendingPrompt(prompt: PromptInput, options?: { durable?: boolean }) {
     pendingPrompt.value = prompt
+    if (options?.durable) {
+      persistPendingPromptToStorage(prompt)
+    }
   }
 
   /** Consume and clear the pending prompt. Returns null if none. */
   function consumePendingPrompt(): PromptInput | null {
-    const p = pendingPrompt.value
-    pendingPrompt.value = null
+    const p = normalizePendingPrompt(pendingPrompt.value) ?? loadPendingPromptFromStorage()
+    clearPendingPrompt()
     return p
   }
 
@@ -433,6 +479,7 @@ export const useSessionStore = defineStore('session', () => {
     updateSessionTitle,
     touchSession,
     resetForProfile,
+    clearPendingPrompt,
     setPendingPrompt,
     consumePendingPrompt,
   }

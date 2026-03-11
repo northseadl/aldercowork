@@ -26,10 +26,6 @@ export const useSkillAuditStore = defineStore('skill-audit', () => {
   const installing = ref(false)
   const error = ref<string | null>(null)
 
-  function setStage(stage: StagedSkillRecord | null) {
-    stagedSkill.value = stage
-  }
-
   function openReport(report?: SkillAuditReport | null) {
     activeReport.value = report ?? activeReport.value
     reportVisible.value = true
@@ -149,7 +145,6 @@ export const useSkillAuditStore = defineStore('skill-audit', () => {
     auditing,
     installing,
     error,
-    setStage,
     openReport,
     closeReport,
     stageArchive,

@@ -49,6 +49,40 @@ function isTurnAssistantMessage(state: StreamState, messageId: string | null): b
     return messageId !== null && state.assistantMessageIds.has(messageId)
 }
 
+function finalizeTurnOnIdle(
+    state: StreamState,
+    sessionId: string,
+    onSessionStatus?: (status: string) => void,
+    onTurnCompleted?: (sessionId: string, assistantMessageId: string) => void,
+): { handled: boolean; assistantMessageId: string | null } {
+    if (!state.completionArmed) {
+        return { handled: false, assistantMessageId: null }
+    }
+
+    // `session.idle` is the authoritative completion signal for the
+    // dispatched turn. Some turns legitimately persist only the user
+    // message (for example immediate abort/reject/no-output cases) and
+    // never emit assistant parts, so gating idle on `sawActivity`
+    // causes the consumer to wait forever on an open SSE connection.
+    state.completionArmed = false
+    onSessionStatus?.('idle')
+    if (state.assistantMessageId) {
+        onTurnCompleted?.(sessionId, state.assistantMessageId)
+    }
+    return { handled: true, assistantMessageId: state.assistantMessageId }
+}
+
+async function closeStreamQuietly(stream: AsyncGenerator<unknown>): Promise<void> {
+    const close = (stream as unknown as { return?: (value?: unknown) => Promise<unknown> | unknown }).return
+    if (typeof close !== 'function') return
+
+    try {
+        await close.call(stream)
+    } catch {
+        // Best effort cleanup — do not mask the primary stream result.
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Stream consumer
 // ---------------------------------------------------------------------------
@@ -76,28 +110,29 @@ export async function consumeEventStream(
     onToolUpdated?: (sessionId: string, assistantMessageId: string, tool: ToolCallState) => void,
     onTurnCompleted?: (sessionId: string, assistantMessageId: string) => void,
 ): Promise<string | null> {
-    for await (const payload of stream) {
-        const event = asRecord(payload)
-        const rawType = asString(event.type)
-        const type = rawType ? normalizeEventType(rawType) : null
+    try {
+        for await (const payload of stream) {
+            const event = asRecord(payload)
+            const rawType = asString(event.type)
+            const type = rawType ? normalizeEventType(rawType) : null
 
-        if (!type) continue
+            if (!type) continue
 
-        const props = asRecord(event.properties)
-        const evtSid = resolveEventSessionId(type, props)
-        if (evtSid && evtSid !== sessionId) continue
-        if (!state.dispatchStarted) continue
+            const props = asRecord(event.properties)
+            const evtSid = resolveEventSessionId(type, props)
+            if (evtSid && evtSid !== sessionId) continue
+            if (!state.dispatchStarted) continue
 
-        // --- Session title update (backend auto-summarize) ---
-        if (type === 'session.updated' || type === 'session.created') {
-            const info = asRecord(props.info)
-            const title = asString(info.title)
-            const sid = asString(info.id) ?? sessionId
-            if (title && onSessionUpdate) {
-                onSessionUpdate(sid, title)
+            // --- Session title update (backend auto-summarize) ---
+            if (type === 'session.updated' || type === 'session.created') {
+                const info = asRecord(props.info)
+                const title = asString(info.title)
+                const sid = asString(info.id) ?? sessionId
+                if (title && onSessionUpdate) {
+                    onSessionUpdate(sid, title)
+                }
+                continue
             }
-            continue
-        }
 
         // --- Session error ---
         // Engine publishes session.error when the agent loop encounters an
@@ -441,16 +476,20 @@ export async function consumeEventStream(
         }
 
         if (type === 'session.idle') {
-            if (!state.completionArmed || !state.turnObserved || !state.sawActivity) continue
-            state.completionArmed = false
-            onSessionStatus?.('idle')
-            if (state.assistantMessageId) {
-                onTurnCompleted?.(sessionId, state.assistantMessageId)
-            }
-            return state.assistantMessageId
+            const idleResult = finalizeTurnOnIdle(
+                state,
+                sessionId,
+                onSessionStatus,
+                onTurnCompleted,
+            )
+            if (!idleResult.handled) continue
+            return idleResult.assistantMessageId
         }
-    }
+        }
 
-    // Reaching EOF without a session-idle signal is always abnormal for an in-flight prompt.
-    throw new Error('Event stream closed before session completion')
+        // Reaching EOF without a session-idle signal is always abnormal for an in-flight prompt.
+        throw new Error('Event stream closed before session completion')
+    } finally {
+        await closeStreamQuietly(stream)
+    }
 }

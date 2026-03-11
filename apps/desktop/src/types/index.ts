@@ -1,7 +1,7 @@
 import type { ChatThreadMessage } from '../components/chat'
 
 
-export type AppNavId = 'sessions' | 'skills' | 'runbooks' | 'settings'
+export type AppNavId = 'sessions' | 'skills' | 'runbooks' | 'workflow' | 'settings'
 
 export interface BreadcrumbItem {
   label: string

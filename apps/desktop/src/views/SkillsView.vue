@@ -86,44 +86,40 @@ async function refreshAll() {
   if (mode.value === 'explore') void marketplaceStore.searchSkills('')
 }
 
+async function autoInstallStaged(stagedId: string, successKey: string, name: string) {
+  const installed = await auditStore.approveInstall(stagedId)
+  installedStore.upsertInstalledSkill(installed)
+  await installedStore.loadAll()
+  selectedId.value = installed.id
+  selectedKind.value = 'installed'
+  mode.value = 'installed'
+  toast.info(t(successKey).replace('{name}', name))
+}
+
 async function handleArchiveImport() {
   const staged = await auditStore.stageArchive()
   importDialogVisible.value = false
   if (!staged) return
-  selectedId.value = staged.id
-  selectedKind.value = 'staged'
-  const report = await auditStore.runAudit(staged.stagedId)
-  auditStore.openReport(report)
+  await autoInstallStaged(staged.stagedId, 'skills.import.successArchive', staged.displayName)
 }
 
 async function handleGitImport(url: string) {
   const staged = await auditStore.stageGit(url)
   importDialogVisible.value = false
-  selectedId.value = staged.id
-  selectedKind.value = 'staged'
-  const report = await auditStore.runAudit(staged.stagedId)
-  auditStore.openReport(report)
+  await autoInstallStaged(staged.stagedId, 'skills.import.successGit', staged.displayName)
 }
 
 async function handleStageMarketplace() {
   if (!selectedMarketplaceDetail.value) return
   const staged = await marketplaceStore.downloadSkill(selectedId.value)
   await auditStore.setMarketplaceStage(staged)
-  selectedId.value = staged.id
-  selectedKind.value = 'staged'
-  const report = await auditStore.runAudit(staged.stagedId)
-  auditStore.openReport(report)
-  toast.info(report.summary)
+  await autoInstallStaged(staged.stagedId, 'skills.import.successArchive', staged.displayName)
 }
 
 async function handleInstallStaged() {
-  const installed = await auditStore.approveInstall()
-  installedStore.upsertInstalledSkill(installed)
-  await installedStore.loadAll()
-  selectedId.value = installed.id
-  selectedKind.value = 'installed'
-  mode.value = 'installed'
-  toast.info(`${installed.displayName} installed`)
+  const staged = auditStore.stagedSkill
+  if (!staged) return
+  await autoInstallStaged(staged.stagedId, 'skills.import.successArchive', staged.displayName)
 }
 
 async function handleActivate(scope: 'global' | 'workspace') {

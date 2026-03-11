@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 
 import { useI18n } from '../../i18n'
+import { parseFrontmatter, useMarkdown } from '../../composables/useMarkdown'
 import { AppButton } from '../ui'
 import PermissionBadge from './PermissionBadge.vue'
 import SkillAuditBadge from './SkillAuditBadge.vue'
@@ -27,6 +28,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { render: renderMd } = useMarkdown()
 
 const skill = computed(() => props.selection?.skill ?? null)
 const kind = computed(() => props.selection?.kind ?? null)
@@ -35,6 +37,16 @@ const summaryText = computed(() => {
   if (!skill.value) return ''
   const preview = 'preview' in skill.value ? skill.value.preview : ''
   return preview || skill.value.summary || ''
+})
+
+const parsedSummary = computed(() => parseFrontmatter(summaryText.value))
+const summaryHtml = computed(() => parsedSummary.value.body.trim() ? renderMd(parsedSummary.value.body) : '')
+
+const releaseNotesHtml = computed(() => {
+  if (!props.selection) return ''
+  const s = props.selection.skill
+  const notes = 'releaseNotes' in s ? (s as unknown as Record<string, unknown>).releaseNotes : ''
+  return typeof notes === 'string' && notes.trim() ? renderMd(notes) : ''
 })
 
 const permissions = computed(() => (skill.value ? normalizePermissions(skill.value) : []))
@@ -71,8 +83,6 @@ const stagedAudit = computed(() => {
   if (props.selection?.kind !== 'staged') return null
   return props.selection.skill.audit ?? null
 })
-
-const stagedInstallAllowed = computed(() => stagedAudit.value?.installAllowed ?? false)
 </script>
 
 <template>
@@ -120,10 +130,21 @@ const stagedInstallAllowed = computed(() => stagedAudit.value?.installAllowed ??
       </button>
     </section>
 
-    <!-- Summary -->
-    <section v-if="summaryText" class="detail__section">
+    <!-- Frontmatter metadata -->
+    <section v-if="parsedSummary.meta.length" class="detail__section">
+      <h3 class="detail__section-title">{{ t('skills.detail.sectionMeta') }}</h3>
+      <div class="detail__meta">
+        <div v-for="[key, val] in parsedSummary.meta" :key="key" class="detail__meta-item">
+          <span class="detail__meta-key">{{ key }}</span>
+          <span class="detail__meta-val">{{ val }}</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Summary (markdown) -->
+    <section v-if="summaryHtml" class="detail__section">
       <h3 class="detail__section-title">{{ t('skills.detail.sectionDescription') }}</h3>
-      <p class="detail__text">{{ summaryText }}</p>
+      <div class="detail__markdown" v-html="summaryHtml" />
     </section>
 
     <!-- Permissions -->
@@ -142,10 +163,10 @@ const stagedInstallAllowed = computed(() => stagedAudit.value?.installAllowed ??
       </div>
     </section>
 
-    <!-- Release notes -->
-    <section v-if="'releaseNotes' in selection.skill && selection.skill.releaseNotes" class="detail__section">
+    <!-- Release notes (markdown) -->
+    <section v-if="releaseNotesHtml" class="detail__section">
       <h3 class="detail__section-title">{{ t('skills.detail.sectionReleaseNotes') }}</h3>
-      <p class="detail__text">{{ selection.skill.releaseNotes }}</p>
+      <div class="detail__markdown" v-html="releaseNotesHtml" />
     </section>
 
     <!-- Audit summary -->
@@ -171,7 +192,7 @@ const stagedInstallAllowed = computed(() => stagedAudit.value?.installAllowed ??
       <AppButton
         v-if="kind === 'staged'"
         variant="subtle"
-        :disabled="installBusy || !stagedInstallAllowed"
+        :disabled="installBusy"
         @click="emit('installStaged')"
       >
         {{ t('common.install') }}
@@ -307,6 +328,97 @@ const stagedInstallAllowed = computed(() => stagedAudit.value?.installAllowed ??
   color: var(--text-2);
   font-size: var(--text-small);
   line-height: var(--lh-normal);
+}
+
+/* Frontmatter metadata */
+.detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--sp) * 0.5);
+}
+
+.detail__meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--r-full);
+  padding: 3px 10px;
+  background: var(--surface-active);
+  font: var(--fw-medium) var(--text-micro) / 1.2 var(--font-mono);
+}
+
+.detail__meta-key {
+  color: var(--text-3);
+}
+
+.detail__meta-key::after {
+  content: ':';
+}
+
+.detail__meta-val {
+  color: var(--text-1);
+}
+
+/* Markdown rendered content */
+.detail__markdown {
+  color: var(--text-2);
+  font-size: var(--text-small);
+  line-height: var(--lh-normal);
+}
+
+.detail__markdown :deep(h1),
+.detail__markdown :deep(h2),
+.detail__markdown :deep(h3) {
+  margin: 0.6em 0 0.3em;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-weight: var(--fw-semibold);
+}
+
+.detail__markdown :deep(h1) { font-size: 1em; }
+.detail__markdown :deep(h2) { font-size: 0.95em; }
+.detail__markdown :deep(h3) { font-size: 0.9em; }
+
+.detail__markdown :deep(p) {
+  margin: 0.4em 0;
+}
+
+.detail__markdown :deep(ul),
+.detail__markdown :deep(ol) {
+  margin: 0.4em 0;
+  padding-left: 1.5em;
+}
+
+.detail__markdown :deep(code) {
+  padding: 1px 4px;
+  border-radius: var(--r-sm);
+  background: var(--surface-active);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.detail__markdown :deep(pre.codeblock) {
+  margin: 0.5em 0;
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.detail__markdown :deep(pre.codeblock code) {
+  padding: 0;
+  background: none;
+}
+
+.detail__markdown :deep(a) {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.detail__markdown :deep(blockquote) {
+  margin: 0.4em 0;
+  padding-left: 0.8em;
+  border-left: 3px solid var(--border);
+  color: var(--text-3);
 }
 
 .detail__tokens {

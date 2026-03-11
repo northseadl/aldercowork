@@ -74,8 +74,6 @@ const elapsedLabel = computed(() => {
 watch(
   () => props.status,
   (status, prev) => {
-    // Auto-expand on failure
-    if (status === 'failed') expanded.value = true
     // Auto-collapse on completion
     if (status === 'completed') expanded.value = false
 
