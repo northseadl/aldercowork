@@ -3,116 +3,111 @@ import { computed, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 
-import { RunbookEditor, RunbookListItem } from '../components/runbooks'
-import { serializeForPrompt } from '../components/runbooks/types'
+import { WorkflowEditor, WorkflowListItem } from '../components/workflow'
+import { serializeWorkflowForPrompt } from '../components/workflow/types'
 import { useI18n } from '../i18n'
 import { useConfirm, useToast } from '../composables'
 import { useKernel } from '../composables/useKernel'
-import { useRunbookStore } from '../stores/runbook'
+import { useWorkflowStore } from '../stores/workflow'
 import { useSessionStore } from '../stores/session'
 
 const { t, locale } = useI18n()
 const toast = useToast()
 const { confirm } = useConfirm()
 const router = useRouter()
-const runbookStore = useRunbookStore()
+const workflowStore = useWorkflowStore()
 const sessionStore = useSessionStore()
 const { status: kernelStatus } = useKernel()
 
 const {
-  runbooks,
+  workflows,
   selectedId,
-  selectedRunbook,
+  selectedWorkflow,
   loaded,
   saving,
-} = storeToRefs(runbookStore)
+} = storeToRefs(workflowStore)
 
 const searchKeyword = ref('')
 const creating = ref(false)
 const sending = ref(false)
 
-const filteredRunbooks = computed(() => {
-  if (!searchKeyword.value.trim()) return runbooks.value
+const filteredWorkflows = computed(() => {
+  if (!searchKeyword.value.trim()) return workflows.value
   const kw = searchKeyword.value.toLowerCase()
-  return runbooks.value.filter((r) =>
-    r.name.toLowerCase().includes(kw)
-    || r.body.toLowerCase().includes(kw)
-    || r.steps.some((s) => s.text.toLowerCase().includes(kw)),
+  return workflows.value.filter((w) =>
+    w.name.toLowerCase().includes(kw)
+    || w.description.toLowerCase().includes(kw)
+    || w.content.toLowerCase().includes(kw),
   )
 })
 
 async function handleCreate() {
   creating.value = true
   try {
-    await runbookStore.createRunbook()
+    await workflowStore.createWorkflow()
   } finally {
     creating.value = false
   }
 }
 
 function handleSelect(id: string) {
-  runbookStore.selectRunbook(id)
+  workflowStore.selectWorkflow(id)
 }
 
 async function handleUpdateName(name: string) {
-  if (!selectedRunbook.value) return
-  await runbookStore.updateRunbook(selectedRunbook.value.id, { name })
+  if (!selectedWorkflow.value) return
+  await workflowStore.updateWorkflow(selectedWorkflow.value.id, { name })
 }
 
-async function handleUpdateBody(body: string) {
-  if (!selectedRunbook.value) return
-  await runbookStore.updateRunbook(selectedRunbook.value.id, { body })
+async function handleUpdateDescription(description: string) {
+  if (!selectedWorkflow.value) return
+  await workflowStore.updateWorkflow(selectedWorkflow.value.id, { description })
+}
+
+async function handleUpdateContent(content: string) {
+  if (!selectedWorkflow.value) return
+  await workflowStore.updateWorkflow(selectedWorkflow.value.id, { content })
 }
 
 async function handleDelete() {
-  if (!selectedRunbook.value) return
+  if (!selectedWorkflow.value) return
   const decision = await confirm({
-    title: t('runbooks.deleteConfirmTitle'),
-    message: t('runbooks.deleteConfirm').replace('{name}', selectedRunbook.value.name),
-    confirmLabel: t('runbooks.delete'),
+    title: t('workflow.deleteConfirmTitle'),
+    message: t('workflow.deleteConfirm').replace('{name}', selectedWorkflow.value.name),
+    confirmLabel: t('workflow.delete'),
     variant: 'danger',
   })
   if (decision !== 'confirm') return
-  await runbookStore.deleteRunbook(selectedRunbook.value.id)
-  toast.info(t('runbooks.deleted'))
+  await workflowStore.deleteWorkflow(selectedWorkflow.value.id)
+  toast.info(t('workflow.deleted'))
 }
 
-// --- Delegate to ChatView's send pipeline via pendingPrompt ---
 async function handleExecute() {
-  const rb = selectedRunbook.value
-  if (!rb) return
+  const wf = selectedWorkflow.value
+  if (!wf) return
 
-  const prompt = serializeForPrompt(rb, locale.value)
+  const prompt = serializeWorkflowForPrompt(wf, locale.value)
   if (!prompt.trim()) return
 
-  // Guard: kernel must be running
   if (kernelStatus.value !== 'running') {
-    toast.error(t('runbooks.engineNotReady'))
+    toast.error(t('workflow.engineNotReady'))
     return
   }
 
   sending.value = true
   try {
-    // Ensure we have a real remote session
     const sid = await sessionStore.ensureActiveSession()
     if (!sid || sid.startsWith('local-')) {
-      toast.error(t('runbooks.sendFailed'))
+      toast.error(t('workflow.sendFailed'))
       return
     }
 
-    // Deposit the prompt for ChatView to consume through its full SSE streaming pipeline.
-    // commandRef with source 'runbook' triggers decorative badge rendering in ChatThread.
     sessionStore.setPendingPrompt({
       text: prompt,
-      commandRef: {
-        name: rb.name || t('runbooks.untitled'),
-        source: 'runbook',
-        template: prompt,
-      },
-    }, { durable: true })
+      commandRef: { name: wf.name || t('workflow.untitled'), source: 'workflow' as 'workflow', template: wf.content },
+    })
 
-    // Navigate to chat — ChatView will detect the pending prompt and auto-send
-    toast.info(t('runbooks.sentToChat'))
+    toast.info(t('workflow.sentToChat'))
     void router.push('/')
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error)
@@ -122,100 +117,76 @@ async function handleExecute() {
   }
 }
 
-// --- Step operations ---
-function handleAddStep(text: string) {
-  if (!selectedRunbook.value) return
-  runbookStore.addStep(selectedRunbook.value.id, text)
-}
-
-function handleUpdateStep(stepId: string, patch: { text?: string; checked?: boolean }) {
-  if (!selectedRunbook.value) return
-  runbookStore.updateStep(selectedRunbook.value.id, stepId, patch)
-}
-
-function handleRemoveStep(stepId: string) {
-  if (!selectedRunbook.value) return
-  runbookStore.removeStep(selectedRunbook.value.id, stepId)
-}
-
-function handleMoveStep(stepId: string, direction: -1 | 1) {
-  if (!selectedRunbook.value) return
-  runbookStore.moveStep(selectedRunbook.value.id, stepId, direction)
-}
-
 function clearSearch() {
   searchKeyword.value = ''
 }
 
 onMounted(() => {
   if (!loaded.value) {
-    runbookStore.loadRunbooks()
+    workflowStore.loadWorkflows()
   }
 })
 </script>
 
 <template>
-  <section class="runbooks-view">
-    <header class="runbooks-view__toolbar">
-      <div class="runbooks-view__search-wrap">
+  <section class="workflow-view">
+    <header class="workflow-view__toolbar">
+      <div class="workflow-view__search-wrap">
         <input
           v-model="searchKeyword"
           type="search"
-          class="runbooks-view__search"
-          :placeholder="t('runbooks.searchPlaceholder')"
+          class="workflow-view__search"
+          :placeholder="t('workflow.searchPlaceholder')"
         />
         <button
           v-if="searchKeyword"
           type="button"
-          class="runbooks-view__clear-btn"
+          class="workflow-view__clear-btn"
           @click="clearSearch"
         >×</button>
       </div>
 
       <button
         type="button"
-        class="runbooks-view__create-btn"
+        class="workflow-view__create-btn"
         :disabled="creating"
         @click="handleCreate"
       >
-        + {{ t('runbooks.createNew') }}
+        + {{ t('workflow.createNew') }}
       </button>
     </header>
 
-    <div class="runbooks-view__body">
+    <div class="workflow-view__body">
       <!-- List pane -->
-      <aside class="runbooks-view__list">
-        <div v-if="!loaded" class="runbooks-view__loading">
+      <aside class="workflow-view__list">
+        <div v-if="!loaded" class="workflow-view__loading">
           {{ t('common.loading') }}
         </div>
-        <div v-else-if="filteredRunbooks.length === 0" class="runbooks-view__empty">
-          {{ searchKeyword ? t('runbooks.noResults') : t('runbooks.emptyState') }}
+        <div v-else-if="filteredWorkflows.length === 0" class="workflow-view__empty">
+          {{ searchKeyword ? t('workflow.noResults') : t('workflow.emptyState') }}
         </div>
-        <RunbookListItem
-          v-for="rb in filteredRunbooks"
+        <WorkflowListItem
+          v-for="wf in filteredWorkflows"
           v-else
-          :key="rb.id"
-          :runbook="rb"
-          :selected="rb.id === selectedId"
+          :key="wf.id"
+          :workflow="wf"
+          :selected="wf.id === selectedId"
           @select="handleSelect"
         />
       </aside>
 
       <!-- Editor pane -->
-      <main class="runbooks-view__editor">
-        <div v-if="!selectedRunbook" class="runbooks-view__no-selection">
-          <p>{{ t('runbooks.selectToEdit') }}</p>
+      <main class="workflow-view__editor">
+        <div v-if="!selectedWorkflow" class="workflow-view__no-selection">
+          <p>{{ t('workflow.selectToEdit') }}</p>
         </div>
-        <RunbookEditor
+        <WorkflowEditor
           v-else
-          :key="selectedRunbook.id"
-          :runbook="selectedRunbook"
+          :key="selectedWorkflow.id"
+          :workflow="selectedWorkflow"
           @update:name="handleUpdateName"
-          @update:body="handleUpdateBody"
-          @add-step="handleAddStep"
-          @update-step="handleUpdateStep"
-          @remove-step="handleRemoveStep"
-          @move-step="handleMoveStep"
+          @update:description="handleUpdateDescription"
+          @update:content="handleUpdateContent"
           @execute="handleExecute"
           @delete="handleDelete"
         />
@@ -223,22 +194,21 @@ onMounted(() => {
     </div>
 
     <!-- Saving indicator -->
-    <div v-if="saving || sending" class="runbooks-view__saving">
-      {{ sending ? t('runbooks.sending') : t('runbooks.saving') }}
+    <div v-if="saving || sending" class="workflow-view__saving">
+      {{ sending ? t('workflow.sending') : t('workflow.saving') }}
     </div>
   </section>
 </template>
 
 <style scoped>
-.runbooks-view {
+.workflow-view {
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
 }
 
-/* Toolbar — matches SkillsView padding for cross-page alignment */
-.runbooks-view__toolbar {
+.workflow-view__toolbar {
   display: flex;
   align-items: center;
   gap: calc(var(--sp) * 1);
@@ -246,13 +216,13 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.runbooks-view__search-wrap {
+.workflow-view__search-wrap {
   position: relative;
   flex: 1;
   max-width: 280px;
 }
 
-.runbooks-view__search {
+.workflow-view__search {
   width: 100%;
   padding: 6px 12px;
   font: var(--fw-normal) var(--text-sm) / 1.4 var(--font);
@@ -264,11 +234,11 @@ onMounted(() => {
   transition: border-color 0.15s;
 }
 
-.runbooks-view__search:focus {
+.workflow-view__search:focus {
   border-color: var(--brand);
 }
 
-.runbooks-view__clear-btn {
+.workflow-view__clear-btn {
   position: absolute;
   right: 6px;
   top: 50%;
@@ -286,12 +256,12 @@ onMounted(() => {
   line-height: 1;
 }
 
-.runbooks-view__clear-btn:hover {
+.workflow-view__clear-btn:hover {
   background: var(--surface-hover);
   color: var(--text-1);
 }
 
-.runbooks-view__create-btn {
+.workflow-view__create-btn {
   border: 1px solid var(--brand);
   background: var(--brand);
   color: var(--on-brand);
@@ -303,17 +273,16 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.runbooks-view__create-btn:hover:not(:disabled) {
+.workflow-view__create-btn:hover:not(:disabled) {
   filter: brightness(1.1);
 }
 
-.runbooks-view__create-btn:disabled {
+.workflow-view__create-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* Body: master-detail layout — boundless design (gap + containerized panels) */
-.runbooks-view__body {
+.workflow-view__body {
   display: grid;
   grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
   flex: 1;
@@ -322,7 +291,7 @@ onMounted(() => {
   padding: 0 calc(var(--sp) * 1.5) calc(var(--sp) * 1.5);
 }
 
-.runbooks-view__list {
+.workflow-view__list {
   min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border);
@@ -331,13 +300,13 @@ onMounted(() => {
   padding: calc(var(--sp) * 0.75);
 }
 
-.runbooks-view__editor {
+.workflow-view__editor {
   min-height: 0;
   overflow: hidden;
 }
 
-.runbooks-view__loading,
-.runbooks-view__empty {
+.workflow-view__loading,
+.workflow-view__empty {
   display: grid;
   place-items: center;
   height: 100%;
@@ -347,7 +316,7 @@ onMounted(() => {
   text-align: center;
 }
 
-.runbooks-view__no-selection {
+.workflow-view__no-selection {
   display: grid;
   place-items: center;
   height: 100%;
@@ -360,8 +329,7 @@ onMounted(() => {
   background: var(--content-warm);
 }
 
-/* Saving indicator */
-.runbooks-view__saving {
+.workflow-view__saving {
   position: absolute;
   bottom: calc(var(--sp) * 2);
   right: calc(var(--sp) * 2);

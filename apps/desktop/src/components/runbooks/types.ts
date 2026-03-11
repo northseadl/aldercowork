@@ -98,32 +98,61 @@ export function migrateRunbook(raw: LegacyRunbook): Runbook {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Locale-aware prompt templates
+// ---------------------------------------------------------------------------
+
+const promptTemplates = {
+  zh: {
+    taskHeader: '## 任务',
+    stepsHeader: '## 步骤',
+    requirementsHeader: '## 执行要求',
+    instruction: '使用 todowrite 工具根据上述步骤创建任务列表，然后按顺序执行每个步骤，逐步更新状态。',
+    outputLang: '请使用中文回复。',
+  },
+  en: {
+    taskHeader: '## Task',
+    stepsHeader: '## Steps',
+    requirementsHeader: '## Requirements',
+    instruction: 'Use the todowrite tool to create a task list from the steps above, then execute each step sequentially, updating the status as you progress.',
+    outputLang: 'Please respond in English.',
+  },
+} as const
+
 /**
- * Serialize a Runbook to a prompt string that an agent can execute.
- * Instructs the agent to use todowrite for progress tracking.
+ * Serialize a Runbook to a structured, locale-consistent prompt string.
+ * Uses markdown formatting and language-matched instructions.
  */
-export function serializeForPrompt(runbook: Runbook): string {
+export function serializeForPrompt(runbook: Runbook, locale: 'zh' | 'en' = 'zh'): string {
+  const tpl = promptTemplates[locale]
   const parts: string[] = []
 
   if (runbook.body.trim()) {
+    parts.push(tpl.taskHeader)
+    parts.push('')
     parts.push(runbook.body.trim())
   }
 
   if (runbook.steps.length > 0) {
     parts.push('')
-    parts.push('Steps to execute in order:')
+    parts.push(tpl.stepsHeader)
+    parts.push('')
     for (let i = 0; i < runbook.steps.length; i++) {
       const step = runbook.steps[i]
       if (step.text.trim()) {
         parts.push(`${i + 1}. ${step.text.trim()}`)
       }
     }
-    parts.push('')
-    parts.push(
-      'Use the todowrite tool to create a task list from the steps above, ' +
-      'then execute each step sequentially, updating the status as you progress.',
-    )
   }
+
+  // Requirements section — always present
+  parts.push('')
+  parts.push(tpl.requirementsHeader)
+  parts.push('')
+  if (runbook.steps.length > 0) {
+    parts.push(`- ${tpl.instruction}`)
+  }
+  parts.push(`- ${tpl.outputLang}`)
 
   return parts.join('\n')
 }

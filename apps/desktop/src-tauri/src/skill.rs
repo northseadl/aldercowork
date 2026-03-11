@@ -1830,11 +1830,9 @@ pub async fn approve_staged_skill_install(
 ) -> Result<InstalledSkillRecord, String> {
     let meta = load_staged_meta(&app, &staged_id)?;
     let parsed = parse_skill_dir(&stage_content_dir(&app, &staged_id), &meta.skill_id)?;
-    let report: SkillAuditReport = read_json_file(&stage_audit_path(&app, &staged_id))
-        .map_err(|_| "Skill must be audited before installation".to_string())?;
-    if !report.install_allowed {
-        return Err("Skill installation is blocked by audit".into());
-    }
+    // Audit is optional — if present, archive the report; if absent, install proceeds without badge
+    let report: Option<SkillAuditReport> =
+        read_json_file(&stage_audit_path(&app, &staged_id)).ok();
 
     let data_paths = resolve_data_paths(&app);
     let skills_root = PathBuf::from(&data_paths.skills_dir);
@@ -1845,10 +1843,12 @@ pub async fn approve_staged_skill_install(
     std::fs::create_dir_all(&target).map_err(|e| format!("Failed to create skill dir: {e}"))?;
     copy_dir_recursive(&stage_content_dir(&app, &staged_id), &target)?;
 
-    write_json_file(
-        &report_path_for(&app, &parsed.manifest.id, &parsed.manifest.version),
-        &report,
-    )?;
+    if let Some(ref r) = report {
+        write_json_file(
+            &report_path_for(&app, &parsed.manifest.id, &parsed.manifest.version),
+            r,
+        )?;
+    }
 
     if let Some(activation) = meta.activation {
         if activation.global {

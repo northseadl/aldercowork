@@ -872,7 +872,17 @@ export function useChat(
         streamState.completionArmed = true
       }
 
-      if (input.commandRef) {
+      if (input.commandRef && (input.commandRef.source === 'workflow' || input.commandRef.source === 'runbook')) {
+        // Template-based dispatch (workflow/runbook): merge template into prompt, use promptAsync
+        const templateText = input.commandRef.template
+        const finalText = text ? `${templateText}\n\n---\n\n${text}` : templateText
+        // Replace any existing text part with the merged template
+        for (let i = promptParts.length - 1; i >= 0; i--) {
+          if (promptParts[i].type === 'text') promptParts.splice(i, 1)
+        }
+        promptParts.push({ type: 'text', text: finalText })
+        // Fall through to promptAsync below
+      } else if (input.commandRef) {
         // Command/skill dispatch via session.command()
         if (typeof sessionNs.command !== 'function') throw new Error('SDK client missing session.command()')
         const commandPayload: Record<string, unknown> = {
@@ -894,7 +904,9 @@ export function useChat(
         if (cmdRec.error) {
           throw new Error(extractSdkErrorMessage(cmdRec.error, 'Command request failed'))
         }
-      } else {
+      }
+
+      if (!input.commandRef || input.commandRef.source === 'workflow' || input.commandRef.source === 'runbook') {
         // Regular prompt dispatch via session.promptAsync()
         if (typeof sessionNs.promptAsync !== 'function') throw new Error('SDK client missing session.promptAsync()')
         const promptPayload: Record<string, unknown> = {

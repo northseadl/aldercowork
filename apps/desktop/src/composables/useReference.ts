@@ -8,6 +8,8 @@
 import { computed, ref, watch, type Ref } from 'vue'
 
 import type { CommandReference, FileReference, FileReferenceSource } from '../stores/session'
+import { useInstalledSkillStore } from '../stores/installedSkill'
+import { useWorkflowStore } from '../stores/workflow'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,6 +101,9 @@ const MAX_CANDIDATES = 20
 const SEARCH_DEBOUNCE_MS = 200
 
 export function useReference(client: Ref<unknown>) {
+    const installedSkillStore = useInstalledSkillStore()
+    const workflowStore = useWorkflowStore()
+
     const query = ref('')
     const isOpen = ref(false)
     const isSearching = ref(false)
@@ -258,6 +263,39 @@ export function useReference(client: Ref<unknown>) {
                         _command: { name, source, template },
                     })
                 }
+            }
+
+            // Inject local installed skills (client-side, no kernel round-trip)
+            const lowerQ2 = q.toLowerCase()
+            const kernelCommandNames = new Set(
+                results.filter((r) => r.category === 'command').map((r) => r.label.toLowerCase()),
+            )
+            for (const skill of installedSkillStore.skills) {
+                const name = skill.displayName || skill.id
+                // Skip if already present from kernel command.list()
+                if (kernelCommandNames.has(name.toLowerCase())) continue
+                const searchable = [name, skill.id, skill.summary ?? ''].join(' ').toLowerCase()
+                if (!searchable.includes(lowerQ2)) continue
+                results.push({
+                    category: 'command',
+                    label: name,
+                    detail: `Skill · ${skill.summary || skill.id}`,
+                    key: `skill:${skill.id}`,
+                    _command: { name, source: 'skill', template: '' },
+                })
+            }
+
+            // Inject local workflow entries (no kernel involvement)
+            for (const wf of workflowStore.workflows) {
+                const searchable = [wf.name, wf.description].join(' ').toLowerCase()
+                if (!searchable.includes(lowerQ2)) continue
+                results.push({
+                    category: 'command',
+                    label: wf.name || wf.id,
+                    detail: `Workflow · ${wf.description || ''}`.trim(),
+                    key: `workflow:${wf.id}`,
+                    _command: { name: wf.name || wf.id, source: 'workflow', template: wf.content },
+                })
             }
 
             if (generation !== searchGeneration) return

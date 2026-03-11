@@ -39,6 +39,22 @@ hljs.registerLanguage('md', markdown)
 
 export type MarkdownRenderMode = 'rich' | 'fast'
 
+/** Extract YAML frontmatter metadata + body from markdown text */
+export function parseFrontmatter(text: string): { meta: [string, string][]; body: string } {
+    const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/)
+    if (!match) return { meta: [], body: text }
+    const meta: [string, string][] = []
+    for (const line of match[1].split('\n')) {
+        const idx = line.indexOf(':')
+        if (idx > 0) {
+            const key = line.slice(0, idx).trim()
+            const val = line.slice(idx + 1).trim()
+            if (key && val) meta.push([key, val])
+        }
+    }
+    return { meta, body: match[2] }
+}
+
 function createMarkdownRenderer(enableHighlight: boolean): MarkdownIt {
     const md = new MarkdownIt({
         html: false,

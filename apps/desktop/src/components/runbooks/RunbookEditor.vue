@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 
+import SkillAutocompletePopover from '../skills/SkillAutocompletePopover.vue'
 import { useI18n } from '../../i18n'
+import { useSkillAutocomplete } from '../../composables/useSkillAutocomplete'
 
 import type { Runbook, RunbookStep } from './types'
 
@@ -64,6 +66,13 @@ watch(() => props.runbook.id, () => {
   localName.value = props.runbook.name
   localBody.value = props.runbook.body
   nextTick(autoResizeBody)
+})
+
+// --- @ Skill autocomplete (shared composable) ---
+const skillAc = useSkillAutocomplete({
+  textareaRef: bodyRef,
+  localValue: localBody,
+  onUpdate: (v) => emit('update:body', v),
 })
 
 // --- Step editing ---
@@ -140,13 +149,25 @@ function stepStats() {
     <!-- Body textarea -->
     <section class="rb-editor__section">
       <label class="rb-editor__label">{{ t('runbooks.bodyLabel') }}</label>
-      <textarea
-        ref="bodyRef"
-        v-model="localBody"
-        class="rb-editor__body"
-        :placeholder="t('runbooks.bodyPlaceholder')"
-        @input="handleBodyInput"
-      />
+      <div class="rb-editor__body-wrap">
+        <textarea
+          ref="bodyRef"
+          v-model="localBody"
+          class="rb-editor__body"
+          :placeholder="t('runbooks.bodyPlaceholder')"
+          @input="handleBodyInput"
+          @keydown="skillAc.handleKeydown"
+          @keyup="skillAc.handleKeyup"
+        />
+
+        <SkillAutocompletePopover
+          v-if="skillAc.show.value && skillAc.filteredSkills.value.length > 0"
+          :skills="skillAc.filteredSkills.value"
+          :selected-index="skillAc.selectedIndex.value"
+          :position="skillAc.pos.value"
+          @select="skillAc.insertSkillRef"
+        />
+      </div>
     </section>
 
     <!-- Step list -->
@@ -352,6 +373,10 @@ function stepStats() {
 }
 
 /* Body textarea */
+.rb-editor__body-wrap {
+  position: relative;
+}
+
 .rb-editor__body {
   width: 100%;
   min-height: 120px;
