@@ -28,6 +28,7 @@
 - **Type as contract**: 类型系统用于约束输入/输出契约，避免运行期猜测。
 - **Single responsibility modules**: 每个模块只解决一个清晰问题，避免隐式耦合。
 - **Comment on why**: 注释只写“为什么/风险”，不复述代码“做了什么”。
+- **User-language copy**: 用户可见文案优先描述用户收益、动作结果与真实风险，避免暴露 `SDK/kernel/manifest/Markdown` 等实现术语，除非该概念本身就是用户必须决策的对象。
 
 ## 反模式档案 (Anti-Pattern Archive)
 - **Append-only memory**: 把规则文件当日志持续追加，导致信息熵飙升；应周期性替换与压缩。
@@ -51,6 +52,7 @@
 - **Text-gated state repair**: 用“是否已有文本内容”决定是否跳过整条消息的最终 reconcile，会让 tool/file/patch 等非文本 part 失去最终态修正机会；应按 part 类型与 id 做选择性 merge。
 - **Late-bound tenant writes**: 在多租户/多 profile 应用里，如果持久化目标在“写入时”才按 active tenant 解析，而前端又有 debounce/异步 reload，旧租户的延迟写入会污染新租户；必须在上下文切换时取消 pending writes，并在 reload 前先把内存状态重置为 tenant-local 基线。
 - **Hot-swapped store API drift**: 在 HMR/热更新环境里，旧的状态容器实例不一定立即获得新 action；app 层 orchestration 直接调用新增方法会出现 `x is not a function`。对关键切换链路应优先调用稳定基元，或做 feature-detect fallback。
+- **Bootstrap reset race**: 启动期若由 eager watcher 先拉取远端状态、随后又在外层 bootstrap/profile reload 中 reset 同一 store，而 reset 后没有显式 replay 加载，UI 首屏会随机空白；profile-scoped store 必须提供原子 `reset + reload` 入口，禁止把初始化分散到 watcher 与 App orchestration 两侧。
 - **Pinia-proxied SDK instance**: 将依赖 `this` 绑定的 SDK class 实例存入 Pinia store 的 `shallowRef` 后，外部通过 `store.prop` 读取时 Pinia 的 `reactive()` 会自动解包 shallowRef 但可能对嵌套属性访问产生中间 proxy，导致 destructured method call 丢失 `this`（`'undefined is not an object (evaluating this.client)'`）；应通过独立 `ref()`/`useClient()` 持有原始实例，store 仅用于 null/非 null 判断和简单 CRUD。
 - **Lazy SSE handshake**: 某些 SDK 的 `event.subscribe()` 只返回惰性 async generator，真正的 `fetch('/event')` 要等第一次 `next()` 才发生；如果“创建消费任务但不等待首个 `server.connected`/handshake 就 dispatch”，日志里会表现为业务请求先于 SSE 连接建立。正确做法是显式 prime 流（消费并回放首个握手事件），确认订阅 ready 后再发送业务请求。
 - **Transport-level completion oracle**: 对长运行 Agent 任务，把同步 RPC 的超时/返回值当成“任务最终成败”会误判真实状态；正确结论必须来自 durable state（消息持久化、终态 finish、`session.idle`、引擎日志）而不是单次 HTTP 调用结果。

@@ -436,12 +436,24 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function resetForProfile(restoredSessionId?: string) {
+    loadGeneration += 1
+    createGeneration += 1
     sessions.value = []
     activeSessionId.value = restoredSessionId ?? ''
     error.value = null
     loading.value = false
     creating.value = false
     clearPendingPrompt()
+  }
+
+  async function reloadForProfile(restoredSessionId?: string) {
+    resetForProfile(restoredSessionId)
+
+    if (!client.value) {
+      return
+    }
+
+    await loadSessions()
   }
 
   /** Deposit a prompt to be consumed by ChatView after navigation. */
@@ -479,6 +491,7 @@ export const useSessionStore = defineStore('session', () => {
     updateSessionTitle,
     touchSession,
     resetForProfile,
+    reloadForProfile,
     clearPendingPrompt,
     setPendingPrompt,
     consumePendingPrompt,

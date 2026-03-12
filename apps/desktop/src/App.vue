@@ -20,6 +20,7 @@ import { useSessionStore } from './stores/session'
 import { useSettingsStore } from './stores/settings'
 import { useSkillAuditStore } from './stores/skillAudit'
 import { useWorkspaceStore } from './stores/workspace'
+import { useWorkflowStore } from './stores/workflow'
 
 import type { AppNavId, BreadcrumbItem, RuntimeErrorDetail, SidebarNavItem } from './types'
 import { RUNTIME_ERROR_EVENT } from './types'
@@ -52,6 +53,7 @@ const marketplaceSkillStore = useMarketplaceSkillStore()
 const skillAuditStore = useSkillAuditStore()
 const runbookStore = useRunbookStore()
 const workspaceStore = useWorkspaceStore()
+const workflowStore = useWorkflowStore()
 const { refreshPaths } = useDataPaths()
 const toast = useToast()
 const fatalRuntimeError = ref<RuntimeErrorDetail | null>(null)
@@ -79,10 +81,18 @@ async function reloadSettingsStore() {
   await settingsStore.init()
 }
 
-function resetSessionStoreForProfile() {
+async function reloadSessionStoreForProfile() {
   const restoredId = settingsStore.lastActiveSessionId ?? undefined
+  if (hasStoreMethod(sessionStore, 'reloadForProfile')) {
+    await sessionStore.reloadForProfile(restoredId)
+    return
+  }
+
   if (hasStoreMethod(sessionStore, 'resetForProfile')) {
     sessionStore.resetForProfile(restoredId)
+    if (sessionStore.client) {
+      await sessionStore.loadSessions()
+    }
     return
   }
 
@@ -91,6 +101,9 @@ function resetSessionStoreForProfile() {
   sessionStore.error = null
   sessionStore.loading = false
   sessionStore.creating = false
+  if (sessionStore.client) {
+    await sessionStore.loadSessions()
+  }
 }
 
 function resetMarketplaceSkillStoreForProfile() {
@@ -142,16 +155,29 @@ async function reloadRunbookStoreForProfile() {
   await runbookStore.loadRunbooks()
 }
 
+async function reloadWorkflowStoreForProfile() {
+  if (hasStoreMethod(workflowStore, 'reload')) {
+    await workflowStore.reload()
+    return
+  }
+
+  workflowStore.workflows = []
+  workflowStore.selectedId = ''
+  workflowStore.loaded = false
+  await workflowStore.loadWorkflows()
+}
+
 async function reloadProfileBoundState() {
   await refreshPaths()
   await reloadSettingsStore()
   providerStatesSnapshot = JSON.stringify(settingsStore.providerStates)
-  resetSessionStoreForProfile()
+  await reloadSessionStoreForProfile()
   resetMarketplaceSkillStoreForProfile()
   resetSkillAuditStoreForProfile()
   await reloadWorkspaceStoreForProfile()
   await installedSkillStore.loadAll()
   await reloadRunbookStoreForProfile()
+  await reloadWorkflowStoreForProfile()
 }
 
 const handleProfileContextChanged = () => {

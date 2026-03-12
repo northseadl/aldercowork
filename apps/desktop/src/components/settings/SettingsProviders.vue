@@ -51,6 +51,10 @@ const nonFeaturedCn = computed(() =>
   BUILTIN_PROVIDERS.filter((p) => !p.featured && p.region === 'cn'),
 )
 
+function getProviderDescription(def: ProviderDefinition): string {
+  return def.descriptionKey ? t(def.descriptionKey) : (def.description ?? '')
+}
+
 onBeforeUnmount(() => { if (restartTimer) clearTimeout(restartTimer) })
 </script>
 
@@ -109,7 +113,7 @@ onBeforeUnmount(() => { if (restartTimer) clearTimeout(restartTimer) })
               </span>
             </div>
           </div>
-          <p v-if="def.description" class="sp2__card-desc">{{ def.description }}</p>
+          <p v-if="getProviderDescription(def)" class="sp2__card-desc">{{ getProviderDescription(def) }}</p>
           <div class="sp2__key-row">
             <ApiKeyInput
               :provider-id="def.id"
@@ -148,7 +152,7 @@ onBeforeUnmount(() => { if (restartTimer) clearTimeout(restartTimer) })
       <template v-if="showAll">
         <!-- Global group -->
         <div v-if="nonFeaturedGlobal.length" class="sp2__group">
-          <span class="sp2__group-label">Global</span>
+          <span class="sp2__group-label">{{ t('settings.providers.groupGlobal') }}</span>
           <div class="sp2__compact-list">
             <div
               v-for="def in nonFeaturedGlobal"
@@ -176,7 +180,7 @@ onBeforeUnmount(() => { if (restartTimer) clearTimeout(restartTimer) })
 
         <!-- China group -->
         <div v-if="nonFeaturedCn.length" class="sp2__group">
-          <span class="sp2__group-label">China</span>
+          <span class="sp2__group-label">{{ t('settings.providers.groupChina') }}</span>
           <div class="sp2__compact-list">
             <div
               v-for="def in nonFeaturedCn"

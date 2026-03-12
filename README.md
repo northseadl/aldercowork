@@ -1,75 +1,75 @@
 # AlderCowork
 
-> **让 AI 成为你团队的标准工作方式**
+> 让团队把常用工作方式稳定地交给 AI
 
-基于 [OpenCode](https://github.com/anomalyco/opencode) 构建的桌面 AI 协作应用（支持 macOS 与 Windows）。面向普通用户和团队，将 AI 能力封装为可管理、可分发、可复用的 Skills，让 AI 和 Skill 生态面向组织易用化和标准化。
+AlderCowork 是一款面向普通办公用户和团队的桌面 AI 协作应用，支持 macOS 与 Windows。它不是把 AI 做成一个更复杂的开发者工具，而是把团队常用的做事方式整理成可以反复复用的技能、操作手册和流程模板，让同一类工作每次都更稳定、更一致。
 
 <p align="center">
   <img src="design/screenshot.png" alt="AlderCowork Screenshot" width="720" />
 </p>
 
----
+## 这个产品解决什么问题
 
-## 解决什么问题？
+| 问题 | 用户感受 | AlderCowork 的做法 |
+|------|----------|--------------------|
+| AI 太分散 | 每个人都在用不同工具，结果质量不稳定 | 把 AI 统一放进同一个桌面工作台 |
+| 好经验留不住 | 会写 Prompt 的人效率高，不会的人难复用 | 把经验整理成技能、操作手册和流程模板 |
+| 权限不透明 | 不知道一个能力会做什么、会改哪里 | 导入和启用前先做安全检查，展示权限与风险 |
+| 切换成本高 | 每次都要重新解释背景、文件和上下文 | 对话、文件引用、项目上下文和模板入口放在一起 |
 
-| 痛点 | 现状 | AlderCowork 方案 |
-|------|------|-----------------|
-| **门槛高** | AI 编程助手面向开发者，普通用户难以使用 | 桌面端 + 自然对话，零学习成本 |
-| **碎片化** | 每人各用各的 AI 工具，能力参差不齐 | 统一桌面端 + Skill 分发，团队能力对齐 |
-| **不可治理** | Prompt 散落各处，无法标准化 | Skills = 可执行的团队知识资产 |
+## 当前产品视图
 
----
+| 页面 | 作用 | 面向用户的价值 |
+|------|------|----------------|
+| `会话` | 和 AI 对话，引用文件、接收结果 | 日常提问、整理、分析、生成内容 |
+| `技能` | 管理可复用能力 | 把团队经验沉淀成可启用的能力库 |
+| `操作手册` | 把一次任务拆成目标 + 步骤 | 适合把重复任务交给 AI 按步骤执行 |
+| `流程模板` | 把一类常用流程写成模板 | 适合沉淀“以后都按这个方式做”的协作方法 |
+| `设置` | 连接 AI 服务、切换身份、调整外观 | 让同一套产品同时适配个人与团队 |
 
-## 核心能力
+## 产品内核
 
-### 💬 智能对话
+AlderCowork 的底层使用 [OpenCode](https://github.com/anomalyco/opencode) 作为 AI 运行服务，但用户面对的是一个更稳定、更易理解的桌面界面：
 
-- 支持主流 LLM 提供商（OpenAI、Anthropic、Google 等）
-- SSE 流式响应，实时推理过程可视化
-- 多会话管理，上下文保持
+- 前台负责对话、技能管理、操作手册、流程模板和设置。
+- 后台负责连接 AI 服务、执行技能、维护会话和文件成果。
+- 数据按身份空间隔离保存，个人空间与企业空间互不混用。
+- 技能导入会先进入检查流程，确认安全后再加入技能库。
 
-### 🧩 Skill 生态
+换句话说，AlderCowork 的重点不是炫技，而是把复杂的 AI 能力包装成普通用户也能长期使用的工作系统。
 
-Skills 不是 prompt 片段，而是**可执行的团队知识资产**。
+## 当前已经具备的能力
 
-- **安装 ≠ 激活** — 导入后按需激活到全局或工作区
-- **双范围激活** — 通过 UI 双 Toggle 控制作用域
-- **Monorepo 支持** — 一次导入递归发现所有子技能
-- **多种导入** — 压缩包 (.zip / .tar.gz) 或 Git 仓库 URL
+### 1. 对话工作台
 
----
+- 支持主流 AI 服务接入
+- 支持流式响应、会话管理和文件引用
+- 可在对话中查看本轮和本次会话生成的文件
 
-## 架构
+### 2. 技能库
 
-```
-┌─────────────────────────────────────────────────────┐
-│  AlderCowork Desktop (Tauri v2 + WebView)           │
-│  Vue 3 + TypeScript + CSS 设计系统                  │
-│  Chat UI │ Skill Panel │ Runbooks │ Settings        │
-└────────────────────────┬────────────────────────────┘
-                         │ @opencode-ai/sdk (HTTP + SSE)
-┌────────────────────────▼────────────────────────────┐
-│  OpenCode Kernel (sidecar, headless mode)            │
-│  LLM Providers │ Tools │ Skills │ Sessions          │
-└─────────────────────────────────────────────────────┘
-```
+- 支持从压缩包或仓库地址导入技能
+- 启用前展示权限、风险和安全检查结果
+- 支持按全局或当前项目启用
 
-OpenCode 是可独立升级的 AI 内核，AlderCowork 是面向用户的外壳。不 Fork 内核，通过官方 SDK + Sidecar 集成。
+### 3. 操作手册
 
----
+- 用自然语言写任务目标
+- 用步骤列表约束执行顺序
+- 一键送入对话区继续执行
 
-## 技术栈
+### 4. 流程模板
 
-| 层 | 技术 |
-|----|------|
-| **Desktop** | Tauri v2 (Rust + WebView) |
-| **前端** | Vue 3 + TypeScript + Vite + Pinia + Vue Router 4 |
-| **样式** | CSS 变量设计系统，dark / light 双主题 |
-| **SDK** | [`@opencode-ai/sdk`](https://www.npmjs.com/package/@opencode-ai/sdk) |
-| **AI 内核** | [OpenCode](https://github.com/anomalyco/opencode) sidecar |
-| **国际化** | 中 / 英双语 |
+- 适合沉淀固定工作方法
+- 支持预览和复用
+- 可与技能组合使用
 
----
+## 技术实现
+
+- Desktop: Tauri v2 + Rust
+- Frontend: Vue 3 + TypeScript + Pinia + Vue Router
+- AI Runtime: OpenCode sidecar + `@opencode-ai/sdk`
+- i18n: 中文 / English
 
 ## 开发
 
@@ -86,31 +86,9 @@ pnpm dev
 cd apps/desktop && npx vue-tsc --noEmit
 ```
 
-<details>
-<summary>📂 目录结构</summary>
-
-```
-aldercowork/
-├── apps/desktop/              # Tauri + Vue 3 桌面应用
-│   ├── src/                   # 前端源码
-│   └── src-tauri/             # Rust 后端 (IPC + sidecar 生命周期)
-├── packages/
-│   └── skill-schema/          # skill.yaml 类型定义
-└── docs/
-    └── product-design.md      # 产品方案
-```
-
-</details>
-
----
-
 ## 致谢
 
-本项目由 [**OpenCode**](https://github.com/anomalyco/opencode) 提供 AI 内核驱动。AlderCowork 通过官方 SDK 和 Sidecar 模式集成 OpenCode，复用其 LLM 编排、工具调用、Session 管理和 Skill 运行时能力。不 Fork、不魔改，与上游同步演进。
-
-感谢 [Anomaly](https://github.com/anomalyco) 团队打造了如此出色的开源项目。
-
----
+本项目使用 [OpenCode](https://github.com/anomalyco/opencode) 作为底层 AI 运行能力。AlderCowork 聚焦在桌面体验、团队协作、技能治理和普通用户可理解的产品交互上。
 
 ## License
 

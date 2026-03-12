@@ -59,6 +59,18 @@ const actions = computed<CommandAction[]>(() => {
       handler: () => { appStore.navigateTo('skills'); void router.push('/skills') },
     },
     {
+      id: 'go-runbooks',
+      title: t('nav.runbooks'),
+      iconPath: 'M12 20h9|M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z',
+      handler: () => { appStore.navigateTo('runbooks'); void router.push('/runbooks') },
+    },
+    {
+      id: 'go-workflow',
+      title: t('nav.workflow'),
+      iconPath: 'M22 12h-4l-3 9L9 3l-3 9H2',
+      handler: () => { appStore.navigateTo('workflow'); void router.push('/workflow') },
+    },
+    {
       id: 'go-settings',
       title: t('nav.settings'),
       iconPath: 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zm0-14v4m0 4h.01',

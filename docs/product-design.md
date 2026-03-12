@@ -1,166 +1,125 @@
 # AlderCowork 产品方案
 
-> 最后更新：2026-03-02
-
----
+> 最后更新：2026-03-12
 
 ## 一、产品定位
 
-**AlderCowork = Team AI Skill Runtime**（团队 AI 技能运行时）
+**AlderCowork = 面向团队与普通办公用户的桌面 AI 协作台**
 
-> *让你的 AI 学会你团队的工作方式，并在整个团队中一致执行*
+它的核心不是“再做一个聊天框”，而是把团队常用的工作方式沉淀下来，让 AI 每次都能按更接近团队标准的方式完成事情。
 
-基于 [OpenCode](https://github.com/anomalyco/opencode) 构建的桌面 AI 协作应用（支持 macOS 与 Windows）。面向普通用户、团队和企业，将 AI 能力封装为可管理、可分发、可复用的 Skills，让 AI 和 Skill 生态面向组织易用化和标准化。
+### 目标用户
 
-### 核心差异化
+- 需要日常写作、整理、分析、汇总、流程推进的办公用户
+- 希望把 AI 用法标准化的团队
+- 需要把可复用经验沉淀成组织资产的企业
 
-- Skills 不是 prompt 技巧，是**可执行、可治理、可复用的团队知识资产**
-- 完全开源（MIT 协议），面向个人、团队、企业均免费
-- 不重写引擎，只做包装 — OpenCode 是可升级的内核，AlderCowork 是外壳
+### 产品主张
 
-### 不是什么
+- **会话** 解决“眼前这件事怎么做”
+- **技能** 解决“哪些能力可以长期复用”
+- **操作手册** 解决“这类任务要按什么步骤做”
+- **流程模板** 解决“以后类似事情都按什么方式做”
 
-- 不是 IDE（Cursor / Windsurf 的战场）
-- 不是聊天框 — 是能力层
-- 不是 OpenCode 的 Fork — 是 SDK 包装
+## 二、当前产品视图
 
----
+| 页面 | 当前状态 | 用户价值 |
+|------|----------|----------|
+| `/` 会话 | 已实现 | 对话、引用文件、接收结果、查看生成文件 |
+| `/skills` 技能 | 已实现 | 导入、检查、启用、移除团队能力 |
+| `/runbooks` 操作手册 | 已实现 | 把任务拆成目标和步骤，再交给 AI 执行 |
+| `/workflow` 流程模板 | 已实现 | 沉淀可复用流程模板，随时调起 |
+| `/settings` 设置 | 已实现 | 连接 AI 服务、切换身份、管理外观 |
 
-## 二、技术架构（当前实现）
+## 三、产品内核
 
-```
-┌─────────────────────────────────────────────────────┐
-│  AlderCowork Desktop (Tauri v2 + WebView)           │
-│  Vue 3 + TypeScript + CSS 设计系统                  │
-│  Chat │ Skill Panel │ Runbooks │ Settings           │
-└────────────────────────┬────────────────────────────┘
-                         │ @opencode-ai/sdk (HTTP + SSE)
-┌────────────────────────▼────────────────────────────┐
-│  OpenCode Kernel (sidecar, headless mode)            │
-│  LLM Providers │ Tools │ Skills │ Sessions          │
-└─────────────────────────────────────────────────────┘
-```
+### 1. 运行结构
 
-### 集成方式
-
-| 接口 | 状态 | 用途 |
-|------|------|------|
-| 官方 `@opencode-ai/sdk` | ✅ 已接入 | Session CRUD、SSE 流式消息、Provider / Model 查询 |
-| Sidecar 进程管理 | ✅ 已实现 | Rust 管理 OpenCode 生命周期，环境变量隔离 |
-| 原生 Skill 发现 | ✅ 已实现 | 通过 symlink 桥接全局 / 工作区两层发现路径 |
-
-### 数据隔离
-
-```
-~/Library/Application Support/com.aldercowork.desktop/
-├─ settings.json               ← AlderCowork 配置（唯一写入者：settingsStore）
-├─ skills/                     ← 技能存储库（导入的源文件）
-├─ kernel-state/               ← OpenCode 隔离运行时
-│  └─ opencode/
-│     ├─ config.json           ← Provider 配置
-│     ├─ opencode.db           ← Session 数据
-│     └─ skills/               ← 全局激活 symlinks
-└─ workspace/                  ← 默认工作区
+```text
+桌面界面（AlderCowork）
+  ├─ 会话
+  ├─ 技能
+  ├─ 操作手册
+  ├─ 流程模板
+  └─ 设置
+        ↓
+AI 运行服务（OpenCode sidecar）
+        ↓
+AI 服务 / 文件 / 技能 / 会话数据
 ```
 
-通过 `XDG_CONFIG_HOME` + `XDG_DATA_HOME` 将内核数据重定向，与用户 `~/.config/opencode` 完全隔离。
+### 2. 核心原则
 
----
+- 用户看到的是稳定、清晰的桌面产品，而不是底层实现细节
+- 同一种工作应当能被沉淀、复用和复查
+- 导入能力前先检查安全性，不能“拿到就运行”
+- 不同身份空间的数据必须隔离，避免个人和企业内容串用
 
-## 三、Skills 系统（核心差异化）
+### 3. 数据与身份
 
-### 三层管理模型
+当前实现已经支持：
 
-```
-存储（安装）     {APP_DATA}/skills/{id}/        ← 导入即存储，仅此一处
-                          ↓ per-skill symlink
-全局激活         {kernel-state}/opencode/skills/{leaf}/
-                          ↓ per-skill symlink
-工作区激活       {workspace}/.agents/skills/{leaf}/
-```
+- 本地空间与企业空间切换
+- 每个身份空间独立保存设置、技能、检查结果和 AI 运行数据
+- 技能导入先进入检查区，再决定是否加入正式技能库
 
-- **安装 ≠ 激活** — 导入的技能可按需激活到全局或工作区（或两者同时）
-- **OpenCode 原生发现** — 利用 OpenCode 内置的 `skill` 工具，从两个路径递归发现 SKILL.md
-- **Monorepo 支持** — 一次 Git clone 递归发现所有子技能
+## 四、关键能力设计
 
-### Skill 包规范
+### 1. 会话
 
-```
-my-skill/
-  SKILL.md          # 人 / 模型可读指令（必须）
-  skill.yaml        # 机器契约（可选，元数据增强）
-  scripts/          # CLI 脚本（可选）
-  resources/        # 参考文档（可选）
-```
+- 支持流式回复和多会话管理
+- 支持引用文件与项目内容
+- 支持查看本轮和本次对话生成的文件
+- 当 AI 被中断或过滤时，会给出可见提示而不是静默结束
 
-### 导入方式（已实现）
+### 2. 技能
 
-| 方式 | 状态 | 说明 |
-|------|------|------|
-| 压缩包 (.zip / .tar.gz / .tgz) | ✅ | 系统 CLI 解压 + 目录名清理 + 单层目录 hoist |
-| Git 仓库 URL | ✅ | `git clone --depth=1` 浅克隆，删除 `.git` |
-| Hub 同步 | 🔲 | 未实现 |
+- 技能的定位是“可复用的团队能力”，不是一次性 Prompt 片段
+- 支持从压缩包或仓库地址导入
+- 启用前展示权限、风险和安全检查结果
+- 支持按“全局”或“当前项目”启用
 
-### Skill 交互流程（UI 已实现）
+### 3. 操作手册
 
-```
-1. Browse    → 技能面板列表（搜索 + 过滤）
-2. Inspect   → 查看 SKILL.md 预览、权限、触发器
-3. Activate  → 双 Toggle：全局 / 工作区（per-skill symlink）
-4. Remove    → 自动清理两个范围的 symlink + 删除源文件
-```
+- 用自然语言描述任务目标
+- 用步骤列表约束执行顺序
+- 一键送入会话区继续执行
+- 更适合重复但仍需要过程控制的任务
 
----
+### 4. 流程模板
 
-## 四、前端架构（当前实现）
+- 用于沉淀固定流程和长期复用的方法
+- 支持编辑与预览
+- 可与技能组合使用
+- 更适合“以后都这样做”的场景
 
-### 路由
+## 五、文案与交互原则
 
-| 路径 | 页面 | 状态 |
-|------|------|------|
-| `/` | ChatView — 对话界面 | ✅ Part-centric 渲染，12 种 Part type + 文件成果带 / 会话收集区 |
-| `/skills` | SkillsView — 技能管理 | ✅ 列表 + 详情 + 导入 + 激活 |
-| `/runbooks` | RunbooksView | 🔲 占位 |
-| `/settings` | SettingsView — 配置 | ✅ Provider / Engine / Theme / Shortcuts |
+为了让普通办公用户更容易理解，用户可见文案遵循以下原则：
 
-### 聊天系统
+- 优先描述用户会得到什么，而不是底层用了什么技术
+- 少说 `内核`、`SDK`、`Markdown`、`manifest` 这类实现词
+- 必须提示风险时，直接说明“会改文件 / 会访问网络 / 会运行命令”
+- 同一个能力在导航、按钮、提示语里的叫法必须一致
 
-- **SSE 流式渲染**：先 prime `event.subscribe` 到首个 `server.connected`，再 dispatch `promptAsync` / `command`；前端为每轮生成上游兼容 `messageID`，以 `assistant.parentID === userMessageID` 做 turn-scoped 聚合；本轮完成以 `session.idle` 为准，若最终 `finish=content-filter|length` 且无正文则补可见终止说明
-- **Part 类型支持**：text / reasoning / file / tool / step / patch / agent / retry / compaction / subtask
-- **文件成果可视化**：`file.edited` live 占位 + `session.diff` 回填，Assistant 消息尾部展示本轮 `Artifact Band`，线程底部展示会话级 `Artifact Shelf`
-- **流式 Markdown**：morphdom 增量 DOM patch（StreamingMarkdown 组件）
-- **权限系统**：`permission.reply` 回传 once / always / reject
+## 六、当前已知约束
 
-### 设计系统
+| 约束 | 当前状态 | 说明 |
+|------|----------|------|
+| 平台范围 | 已明确 | 当前仅支持 macOS 与 Windows |
+| AI 服务接入 | 已实现 | 首次使用仍需要用户提供至少一个服务密钥 |
+| 技能安全 | 已实现基础能力 | 已有导入前检查，但仍需要用户理解权限提示 |
+| 企业接入 | 已实现基础连接 | 连接企业 Hub 后可切换身份空间，但治理能力仍可继续深化 |
 
-- `tokens.css`：dark / light 双主题 CSS 变量
-- 双层材质：Shell (Layer 0) 包裹 Content (Layer 1)
-- 中英双语 i18n
+## 七、后续演进方向
 
----
+| 方向 | 目标 |
+|------|------|
+| 技能治理 | 更清晰的来源、版本、更新和风险提示 |
+| 团队协作 | 更好的共享、分发与组织级管理 |
+| 结果回看 | 更好的任务结果、文件成果和历史复用体验 |
+| 通知机制 | 长任务完成提醒、状态推送与异步协作 |
 
-## 五、Roadmap
+## 八、技术附记
 
-| 阶段 | 方向 | 关键交付 |
-|------|------|----------|
-| **Phase 1** | 体验优化 | Chat 流式交互打磨、错误恢复、性能优化、会话管理 |
-| **Phase 2** | 技能深化 | 技能搜索 / 推荐、Eval 评估、技能版本管理、Hub 同步 |
-| **Phase 3** | Runbook | 会话片段沉淀为可复用资产、参数化执行、团队共享 |
-| **Phase 4** | 组织能力 | 私有技能仓库、技能分发治理、审计日志 |
-| **Phase 5** | 通知 | 异步任务完成通知、@mention 提醒、执行状态推送 |
-| **Phase 6** | 移动端 | 依赖 PC 客户端的轻量伴侣应用（通知 + 审批 + 查看） |
-
----
-
-## 六、风险
-
-| 风险 | 状态 | 对策 |
-|------|------|------|
-| OpenCode API 变动 | 可管理 | SDK 包装的适配成本远低于 Fork 维护 |
-| 内核 CWD 未传递 | 已知 | 工作区技能需要设置 sidecar CWD（待实现） |
-
----
-
-## 七、开源协议
-
-[MIT](../LICENSE)
+当前桌面端基于 `Tauri v2 + Vue 3 + TypeScript`，底层 AI 运行能力来自 `OpenCode sidecar`。这些实现细节对产品成立很重要，但不应成为普通用户理解产品的前置门槛。

@@ -67,6 +67,12 @@ async function handleRemove(profileId: string) {
 
 const enterpriseProfiles = computed(() => profiles.value.filter((p) => p.kind === 'enterprise'))
 const hasMultipleProfiles = computed(() => profiles.value.length > 1)
+
+function formatProfileKind(kind: 'local' | 'enterprise'): string {
+  return kind === 'enterprise'
+    ? t('settings.profiles.kindEnterprise')
+    : t('settings.profiles.kindLocal')
+}
 </script>
 
 <template>
@@ -81,10 +87,10 @@ const hasMultipleProfiles = computed(() => profiles.value.length > 1)
           </svg>
         </div>
         <div class="sp3__active-text">
-          <span class="sp3__active-name">{{ activeProfile?.label || 'Local' }}</span>
+          <span class="sp3__active-name">{{ activeProfile?.label || t('settings.profiles.localName') }}</span>
           <span class="sp3__active-kind">
             {{ activeProfile?.kind === 'enterprise'
-              ? activeProfile.enterprise?.hubUrl ?? 'Enterprise'
+              ? activeProfile.enterprise?.hubUrl ?? t('settings.profiles.kindEnterprise')
               : t('settings.profiles.localDesc') }}
           </span>
         </div>
@@ -103,7 +109,7 @@ const hasMultipleProfiles = computed(() => profiles.value.length > 1)
         >
           <div class="sp3__card-info">
             <span class="sp3__card-name">{{ profile.label }}</span>
-            <span class="sp3__card-kind">{{ profile.kind }}</span>
+            <span class="sp3__card-kind">{{ formatProfileKind(profile.kind) }}</span>
           </div>
           <div class="sp3__card-actions">
             <button

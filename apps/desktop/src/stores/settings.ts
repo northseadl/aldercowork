@@ -26,8 +26,10 @@ export interface ProviderDefinition {
     defaultBaseUrl?: string
     /** Show in onboarding welcome screen */
     featured?: boolean
-    /** Short description for the welcome screen */
+    /** Short description fallback for the welcome screen */
     description?: string
+    /** i18n key for user-facing description */
+    descriptionKey?: string
 }
 
 /**
@@ -42,9 +44,9 @@ export interface ProviderDefinition {
  */
 export const BUILTIN_PROVIDERS: ProviderDefinition[] = [
     // ── Global providers ─────────────────────────────────────────────
-    { id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, description: 'Claude series' },
-    { id: 'openai', label: 'OpenAI', envVar: 'OPENAI_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, description: 'GPT series' },
-    { id: 'google', label: 'Google', envVar: 'GOOGLE_GENERATIVE_AI_API_KEY', supportsBaseUrl: false, region: 'global', featured: true, description: 'Gemini series' },
+    { id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, descriptionKey: 'settings.providers.catalog.anthropic' },
+    { id: 'openai', label: 'OpenAI', envVar: 'OPENAI_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, descriptionKey: 'settings.providers.catalog.openai' },
+    { id: 'google', label: 'Google', envVar: 'GOOGLE_GENERATIVE_AI_API_KEY', supportsBaseUrl: false, region: 'global', featured: true, descriptionKey: 'settings.providers.catalog.google' },
     { id: 'xai', label: 'xAI', envVar: 'XAI_API_KEY', supportsBaseUrl: true, region: 'global' },
     { id: 'mistral', label: 'Mistral', envVar: 'MISTRAL_API_KEY', supportsBaseUrl: true, region: 'global' },
     { id: 'groq', label: 'Groq', envVar: 'GROQ_API_KEY', supportsBaseUrl: true, region: 'global' },
@@ -59,18 +61,18 @@ export const BUILTIN_PROVIDERS: ProviderDefinition[] = [
     // ── Moonshot AI / Kimi ───────────────────────────────────────────
     { id: 'moonshotai', label: 'Moonshot AI', envVar: 'MOONSHOT_API_KEY', supportsBaseUrl: true, region: 'global' },
     { id: 'moonshotai-cn', label: 'Moonshot AI (China)', envVar: 'MOONSHOT_API_KEY', supportsBaseUrl: true, region: 'cn' },
-    { id: 'kimi-for-coding', label: 'Kimi For Coding', envVar: 'KIMI_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, description: 'Kimi K2.5' },
+    { id: 'kimi-for-coding', label: 'Kimi For Coding', envVar: 'KIMI_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, descriptionKey: 'settings.providers.catalog.kimiForCoding' },
 
     // ── MiniMax ──────────────────────────────────────────────────────
-    { id: 'minimax', label: 'MiniMax (minimax.io)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'global', description: 'MiniMax M2.5' },
+    { id: 'minimax', label: 'MiniMax (minimax.io)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'global', descriptionKey: 'settings.providers.catalog.minimax' },
     { id: 'minimax-cn', label: 'MiniMax (minimaxi.com)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'cn' },
-    { id: 'minimax-coding-plan', label: 'MiniMax Coding Plan (minimax.io)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, description: 'MiniMax Coding Plan' },
+    { id: 'minimax-coding-plan', label: 'MiniMax Coding Plan (minimax.io)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'global', featured: true, descriptionKey: 'settings.providers.catalog.minimaxCodingPlan' },
     { id: 'minimax-cn-coding-plan', label: 'MiniMax Coding Plan (minimaxi.com)', envVar: 'MINIMAX_API_KEY', supportsBaseUrl: true, region: 'cn' },
 
     // ── China mainland providers ─────────────────────────────────────
-    { id: 'deepseek', label: 'DeepSeek', envVar: 'DEEPSEEK_API_KEY', supportsBaseUrl: true, region: 'cn', description: 'DeepSeek V3 / R1' },
+    { id: 'deepseek', label: 'DeepSeek', envVar: 'DEEPSEEK_API_KEY', supportsBaseUrl: true, region: 'cn', descriptionKey: 'settings.providers.catalog.deepseek' },
     { id: 'zhipuai', label: 'Zhipu AI', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'cn' },
-    { id: 'zhipuai-coding-plan', label: 'Zhipu AI Coding Plan (CN)', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'cn', featured: true, description: 'Zhipu Coding Plan (China)' },
+    { id: 'zhipuai-coding-plan', label: 'Zhipu AI Coding Plan (CN)', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'cn', featured: true, descriptionKey: 'settings.providers.catalog.zhipuCodingPlan' },
     { id: 'zai', label: 'Z.AI', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'global' },
     { id: 'zai-coding-plan', label: 'Z.AI Coding Plan (Global)', envVar: 'ZHIPU_API_KEY', supportsBaseUrl: true, region: 'global' },
     { id: 'alibaba', label: 'Alibaba', envVar: 'DASHSCOPE_API_KEY', supportsBaseUrl: true, region: 'global' },

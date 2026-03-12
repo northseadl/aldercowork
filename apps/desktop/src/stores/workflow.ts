@@ -60,6 +60,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
         }
     }
 
+    async function reload(): Promise<void> {
+        workflows.value = []
+        selectedId.value = ''
+        loaded.value = false
+        await loadWorkflows()
+    }
+
     function selectWorkflow(id: string): void {
         selectedId.value = id
     }
@@ -110,6 +117,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
         loaded,
         saving,
         loadWorkflows,
+        reload,
         selectWorkflow,
         createWorkflow,
         updateWorkflow,

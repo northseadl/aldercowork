@@ -21,6 +21,7 @@ const shortcuts = [
   { keys: '⌘ 1', action: 'settings.shortcuts.keys.sessions' },
   { keys: '⌘ 2', action: 'settings.shortcuts.keys.skills' },
   { keys: '⌘ 3', action: 'settings.shortcuts.keys.runbooks' },
+  { keys: '⌘ 4', action: 'settings.shortcuts.keys.workflow' },
   { keys: '⌘ ,', action: 'settings.shortcuts.keys.settings' },
   { keys: '⌘ N', action: 'settings.shortcuts.keys.newSession' },
   { keys: '⌘ ⇧ T', action: 'settings.shortcuts.keys.toggleTheme' },

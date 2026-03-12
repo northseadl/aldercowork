@@ -29,6 +29,10 @@ const selectedDef = computed(() =>
   BUILTIN_PROVIDERS.find((p) => p.id === selectedProvider.value) ?? BUILTIN_PROVIDERS[0],
 )
 
+function getProviderDescription(provider: (typeof BUILTIN_PROVIDERS)[number]): string {
+  return provider.descriptionKey ? t(provider.descriptionKey) : (provider.description ?? '')
+}
+
 useDialogA11y({
   open: dialogOpen,
   containerRef: dialogRef,
@@ -115,7 +119,7 @@ function skipForNow() {
               @click="selectProvider(p.id)"
             >
               <span class="welcome__provider-name">{{ p.label }}</span>
-              <span class="welcome__provider-desc">{{ p.description }}</span>
+              <span class="welcome__provider-desc">{{ getProviderDescription(p) }}</span>
               <svg class="welcome__provider-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="9 18 15 12 9 6" />
               </svg>
@@ -167,7 +171,7 @@ function skipForNow() {
                 v-model="apiKeyInput"
                 type="password"
                 class="welcome__input"
-                :placeholder="'sk-...'"
+                :placeholder="t('welcome.apiKeyPlaceholder')"
                 autocomplete="off"
                 spellcheck="false"
               />

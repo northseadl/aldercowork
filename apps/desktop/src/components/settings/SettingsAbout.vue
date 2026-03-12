@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from '../../i18n'
 import { useKernel } from '../../composables/useKernel'
+import packageJson from '../../../package.json'
 
 const { t } = useI18n()
 const kernel = useKernel()
@@ -24,7 +25,7 @@ const kernel = useKernel()
     <div class="sa__info">
       <div class="sa__row">
         <span class="sa__label">{{ t('settings.about.appVersion') }}</span>
-        <code class="sa__val">0.1.0</code>
+        <code class="sa__val">v{{ packageJson.version }}</code>
       </div>
       <div v-if="kernel.version.value" class="sa__row">
         <span class="sa__label">{{ t('settings.about.kernelVersion') }}</span>
