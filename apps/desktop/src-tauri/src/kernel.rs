@@ -34,6 +34,8 @@ pub struct KernelManager {
     child: Option<CommandChild>,
     port: Option<u16>,
     pid: Option<u32>,
+    /// True only after /health responds — prevents premature SDK connections.
+    ready: bool,
     last_error: Option<String>,
     engine_dir: Option<String>,
     /// Provider env vars persisted across restarts
@@ -46,6 +48,7 @@ impl KernelManager {
             child: None,
             port: None,
             pid: None,
+            ready: false,
             last_error: None,
             engine_dir: None,
             provider_env: None,
@@ -137,6 +140,7 @@ impl KernelManager {
         self.child = Some(child);
         self.port = Some(port);
         self.pid = Some(pid);
+        self.ready = false;
 
         // Spawn log reader (fire and forget)
         let handle = app.clone();
@@ -185,11 +189,17 @@ impl KernelManager {
         })
     }
 
+    /// Mark engine as ready (HTTP health check passed).
+    pub fn set_ready(&mut self) {
+        self.ready = true;
+    }
+
     pub fn take_child(&mut self) -> Option<CommandChild> {
         let child = self.child.take();
         if child.is_some() {
             self.port = None;
             self.pid = None;
+            self.ready = false;
         }
         child
     }
@@ -216,7 +226,7 @@ impl KernelManager {
     pub fn status(&self) -> KernelStatusPayload {
         KernelStatusPayload {
             running: self.child.is_some(),
-            port: self.port,
+            port: if self.ready { self.port } else { None },
             pid: self.pid,
             error: self.last_error.clone(),
         }

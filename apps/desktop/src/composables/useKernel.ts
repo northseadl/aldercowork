@@ -81,11 +81,19 @@ export function createKernel(): KernelContext {
     async function pollStatus() {
         try {
             const payload = await invoke<KernelStatusPayload>('kernel_status')
-            if (payload.running) {
+            if (payload.running && payload.port != null) {
+                // Process alive AND HTTP server ready — fully operational
                 if (status.value !== 'running') {
                     status.value = 'running'
                 }
                 port.value = payload.port
+                error.value = null
+            } else if (payload.running) {
+                // Process alive but HTTP not ready yet — stay in starting state
+                if (status.value !== 'starting') {
+                    status.value = 'starting'
+                }
+                port.value = null
                 error.value = null
             } else if (status.value === 'running' || status.value === 'starting') {
                 status.value = 'error'

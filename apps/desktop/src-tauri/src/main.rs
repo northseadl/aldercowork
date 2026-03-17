@@ -365,6 +365,7 @@ async fn start_kernel_runtime(
         let mut mgr = state.lock().await;
         if mgr.pid_matches(launched_pid) {
             mgr.clear_last_error();
+            mgr.set_ready();
         }
 
         return Ok(kernel::KernelInfo {

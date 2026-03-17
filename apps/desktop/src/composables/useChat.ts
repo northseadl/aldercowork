@@ -38,6 +38,7 @@ import {
   nowISO,
   parseToolFromPart,
   subscribePrimedEventStream,
+  withTimeout,
 } from '../services/stream'
 import { createEmptySessionArtifactSummary } from '../types/artifacts'
 import {
@@ -461,9 +462,11 @@ export function useChat(
         rebuildSessionArtifacts()
         return
       }
-      const rawResult = await (sessionNs.get as (opts: unknown) => Promise<unknown>)({
-        sessionID: targetSid,
-      })
+      const rawResult = await withTimeout(
+        (sessionNs.get as (opts: unknown) => Promise<unknown>)({ sessionID: targetSid }),
+        10_000,
+        'Session artifacts request timed out',
+      )
       if (loadToken !== artifactLoadGeneration) return
       if (sessionId.value !== targetSid) return
 
@@ -570,9 +573,11 @@ export function useChat(
     try {
       const sessionNs = asRecord(asRecord(c).session)
       if (typeof sessionNs.messages !== 'function') return
-      const rawArgs = await (sessionNs.messages as (opts: unknown) => Promise<unknown>)({
-        sessionID: sid,
-      })
+      const rawArgs = await withTimeout(
+        (sessionNs.messages as (opts: unknown) => Promise<unknown>)({ sessionID: sid }),
+        10_000,
+        'Session messages request timed out',
+      )
       if (thisGen !== loadGeneration) return
       if (sessionId.value !== sid) return
       if (isStreaming.value && sid === activeStreamSessionId) return

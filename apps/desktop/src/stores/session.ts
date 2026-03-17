@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, shallowRef, watch } from 'vue'
 
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client'
+import { withTimeout } from '../services/stream'
 
 // ---------------------------------------------------------------------------
 // Part-centric message model — mirrors the OpenCode SDK Part union
@@ -263,7 +264,11 @@ export const useSessionStore = defineStore('session', () => {
     error.value = null
 
     try {
-      const result = await currentClient.session.list()
+      const result = await withTimeout(
+        currentClient.session.list(),
+        10_000,
+        'Session list request timed out',
+      )
       if (generation !== loadGeneration || client.value !== currentClient) return
 
       const remoteSessions: SessionSummary[] = (result.data ?? []).map(mapSDKSession)
