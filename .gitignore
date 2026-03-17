@@ -35,6 +35,12 @@ pnpm-debug.log*
 # Kernel binaries (downloaded at runtime)
 apps/desktop/src-tauri/binaries/opencode-*
 
+# Backup files (use git history, not local .bak)
+*.bak
+
 # Local audit/runtime artifacts
 tasks/**/.dispatch-logs/
 test_sdk.mjs
+
+# Cloned reference repos (source-of-truth for upstream code analysis)
+docs/references/opencode-src/

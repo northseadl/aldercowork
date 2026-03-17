@@ -240,6 +240,99 @@ async fn stop_kernel_runtime(state: &Arc<Mutex<KernelManager>>) {
     }
 }
 
+/// Navigate a JSON path like `["provider", "minimax", "models"]`, creating
+/// intermediate objects as needed. Returns `None` if any segment is not an object.
+fn json_ensure_path<'a>(
+    root: &'a mut serde_json::Map<String, serde_json::Value>,
+    path: &[&str],
+) -> Option<&'a mut serde_json::Map<String, serde_json::Value>> {
+    let mut current = root;
+    for &key in path {
+        current = current
+            .entry(key)
+            .or_insert(serde_json::json!({}))
+            .as_object_mut()?;
+    }
+    Some(current)
+}
+
+// ---------------------------------------------------------------------------
+// Modality compatibility layer
+//
+// Why: OpenCode `unsupportedParts()` (transform.ts) replaces file parts with
+// error text when `model.capabilities.input[modality]` is false. The capability
+// map is populated from models.dev, but some providers ship model updates faster
+// than the registry. Config-level `modalities` takes priority (provider.ts L908),
+// so we inject ground-truth capabilities at startup.
+//
+// Maintenance: add entries to `MODALITY_OVERRIDES` when a provider's actual
+// capabilities diverge from models.dev. Remove when upstream catches up.
+// See docs/engine-modality-compat.md for full context.
+// ---------------------------------------------------------------------------
+
+/// OpenCode input/output modality token. Must match the string values
+/// that OpenCode's `mimeToModality()` produces and `provider.ts` consumes.
+#[derive(Clone, Copy)]
+#[allow(dead_code)] // Variants kept for completeness; only subset used in MODALITY_OVERRIDES
+enum Modality {
+    Text,
+    Image,
+    Audio,
+    Video,
+    Pdf,
+}
+
+impl Modality {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Image => "image",
+            Self::Audio => "audio",
+            Self::Video => "video",
+            Self::Pdf => "pdf",
+        }
+    }
+}
+
+struct ModalityOverride {
+    provider: &'static str,
+    model: &'static str,
+    input: &'static [Modality],
+    output: &'static [Modality],
+}
+
+use Modality::{Image, Text};
+
+// MiniMax 官网确认 M2.x 系列支持图像理解 (2026-03 verified)
+static MODALITY_OVERRIDES: &[ModalityOverride] = &[
+    ModalityOverride { provider: "minimax", model: "MiniMax-M2.5",           input: &[Text, Image], output: &[Text] },
+    ModalityOverride { provider: "minimax", model: "MiniMax-M2.5-highspeed", input: &[Text, Image], output: &[Text] },
+    ModalityOverride { provider: "minimax", model: "MiniMax-M2.1",           input: &[Text, Image], output: &[Text] },
+];
+
+fn inject_modality_overrides(obj: &mut serde_json::Map<String, serde_json::Value>) {
+    fn modalities_to_json(mods: &[Modality]) -> serde_json::Value {
+        serde_json::Value::Array(mods.iter().map(|m| serde_json::json!(m.as_str())).collect())
+    }
+
+    for entry in MODALITY_OVERRIDES {
+        let model_obj =
+            match json_ensure_path(obj, &["provider", entry.provider, "models", entry.model]) {
+                Some(m) => m,
+                None => continue,
+            };
+        if !model_obj.contains_key("modalities") {
+            model_obj.insert(
+                "modalities".into(),
+                serde_json::json!({
+                    "input": modalities_to_json(entry.input),
+                    "output": modalities_to_json(entry.output),
+                }),
+            );
+        }
+    }
+}
+
 fn ensure_active_profile_environment(app: &tauri::AppHandle) -> Result<DataPaths, String> {
     let active_profile = profile::get_active_profile(app)?;
     let data_paths = profile::resolve_profile_data_paths(app, &active_profile);
@@ -326,6 +419,12 @@ fn ensure_active_profile_environment(app: &tauri::AppHandle) -> Result<DataPaths
             skills_obj.insert("paths".into(), serde_json::json!([&data_paths.engine_skills_dir]));
         }
     }
+
+    // Inject modality overrides for models whose models.dev data is outdated.
+    // OpenCode's unsupportedParts() replaces file parts with error text when a
+    // model doesn't declare the modality. Config modalities take priority over
+    // models.dev (see provider.ts L908-913), so we declare the real capabilities.
+    inject_modality_overrides(obj);
 
 
     if let Ok(json_str) = serde_json::to_string_pretty(&config) {

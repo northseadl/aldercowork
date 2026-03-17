@@ -91,8 +91,20 @@ async function loadCurrentModel() {
 
 async function selectModel(providerID: string, modelID: string) {
   await setGlobalModel(providerID, modelID)
+
+  // Hot-update running kernel via SDK — no restart needed.
+  // config.json write above ensures persistence across kernel restarts.
+  const c = props.client as Record<string, unknown> | null
+  if (c && 'config' in c) {
+    try {
+      const configApi = c.config as { update: (params: { config: { model: string } }) => Promise<unknown> }
+      await configApi.update({ config: { model: `${providerID}/${modelID}` } })
+    } catch (e) {
+      console.warn('[ModelPicker] runtime config update failed, will take effect on next restart:', e)
+    }
+  }
+
   currentModel.value = { providerID, modelID }
-  // Reset variant when switching model (new model may have different variants)
   currentVariant.value = null
   isOpen.value = false
   emit('model-changed', { providerID, modelID })

@@ -60,6 +60,7 @@ export type { PermissionDecision, PermissionRequest, PermissionResolver } from '
 // Constants
 // ---------------------------------------------------------------------------
 
+const MESSAGE_PAGE_SIZE = 50
 const STREAM_RECONNECT_MAX_ATTEMPTS = 4
 const STREAM_RECONNECT_BASE_DELAY_MS = 250
 const STREAM_CLOSE_BEFORE_COMPLETION_ERROR = 'Event stream closed before session completion'
@@ -310,6 +311,7 @@ export function useChat(
 ) {
   const messages = ref<RichMessage[]>([])
   const isStreaming = ref(false)
+  const isReconnecting = ref(false)
   const isLoadingMessages = ref(false)
   const streamError = ref<string | null>(null)
   const sessionStatus = ref<SessionStatusType>(null)
@@ -317,6 +319,11 @@ export function useChat(
   const sessionArtifacts = ref<SessionArtifactSummary>(createEmptySessionArtifactSummary())
   const latestCompletedTurnId = ref<string | null>(null)
   const restoredSessionFiles = ref<FileOutcome[]>([])
+
+  // Cursor-based pagination state
+  const nextCursor = ref<string | null>(null)
+  const hasMoreMessages = ref(false)
+  const isLoadingOlderMessages = ref(false)
 
   let activeAbort: AbortController | null = null
   let activeStreamSessionId: string | null = null
@@ -574,7 +581,10 @@ export function useChat(
       const sessionNs = asRecord(asRecord(c).session)
       if (typeof sessionNs.messages !== 'function') return
       const rawArgs = await withTimeout(
-        (sessionNs.messages as (opts: unknown) => Promise<unknown>)({ sessionID: sid }),
+        (sessionNs.messages as (opts: unknown) => Promise<unknown>)({
+          sessionID: sid,
+          limit: MESSAGE_PAGE_SIZE,
+        }),
         10_000,
         'Session messages request timed out',
       )
@@ -586,6 +596,13 @@ export function useChat(
       if (result.error) {
         throw new Error(extractSdkErrorMessage(result.error, 'Failed to load session messages'))
       }
+
+      // Extract pagination cursor from response headers
+      const httpResponse = result.response as Response | undefined
+      const cursor = httpResponse?.headers?.get('X-Next-Cursor') ?? null
+      nextCursor.value = cursor
+      hasMoreMessages.value = !!cursor
+
       const raw = Array.isArray(rawArgs)
         ? (rawArgs as Array<Record<string, unknown>>)
         : Array.isArray(result.data)
@@ -610,6 +627,55 @@ export function useChat(
       if (thisGen === loadGeneration) {
         isLoadingMessages.value = false
       }
+    }
+  }
+
+  async function loadOlderMessages(): Promise<void> {
+    if (!hasMoreMessages.value || isLoadingOlderMessages.value || isStreaming.value) return
+    const c = client.value
+    const sid = sessionId.value
+    if (!c || !sid || !nextCursor.value) return
+
+    isLoadingOlderMessages.value = true
+    try {
+      const sessionNs = asRecord(asRecord(c).session)
+      if (typeof sessionNs.messages !== 'function') return
+
+      const rawArgs = await withTimeout(
+        (sessionNs.messages as (opts: unknown) => Promise<unknown>)({
+          sessionID: sid,
+          limit: MESSAGE_PAGE_SIZE,
+          before: nextCursor.value,
+        }),
+        10_000,
+        'Loading older messages timed out',
+      )
+
+      if (sessionId.value !== sid) return
+
+      const result = asRecord(rawArgs)
+      if (result.error) {
+        throw new Error(extractSdkErrorMessage(result.error, 'Failed to load older messages'))
+      }
+
+      const httpResponse = result.response as Response | undefined
+      const cursor = httpResponse?.headers?.get('X-Next-Cursor') ?? null
+      nextCursor.value = cursor
+      hasMoreMessages.value = !!cursor
+
+      const raw = Array.isArray(result.data)
+        ? (result.data as Array<Record<string, unknown>>)
+        : []
+      const olderMapped = raw.map(mapRemoteMessage)
+
+      // Prepend older messages and re-merge to handle agentic loop groups
+      // that may span the page boundary. mergeAgenticLoopMessages is
+      // idempotent on already-merged messages.
+      messages.value = mergeAgenticLoopMessages([...olderMapped, ...messages.value])
+    } catch (e) {
+      console.warn('[useChat] loadOlderMessages failed:', e)
+    } finally {
+      isLoadingOlderMessages.value = false
     }
   }
 
@@ -850,6 +916,7 @@ export function useChat(
               throw new Error(`${STREAM_CLOSE_BEFORE_COMPLETION_ERROR} (reconnect exhausted after ${STREAM_RECONNECT_MAX_ATTEMPTS + 1} attempts)`)
             }
             reconnectAttempt += 1
+            isReconnecting.value = true
             const backoff = Math.min(STREAM_RECONNECT_BASE_DELAY_MS * (2 ** (reconnectAttempt - 1)), 2_000)
             console.warn('[useChat:debug] stream closed unexpectedly; reconnecting', {
               attempt: reconnectAttempt,
@@ -859,6 +926,7 @@ export function useChat(
             })
             await waitAbortable(backoff, abortCtl.signal)
             stream = await subscribeEventStream()
+            isReconnecting.value = false
           }
         }
       }
@@ -970,6 +1038,7 @@ export function useChat(
       if (activeStreamSessionId === currentSid) activeStreamSessionId = null
       if (activeStreamClient === currentClient) activeStreamClient = null
       cancelRequested = false
+      isReconnecting.value = false
       aiMsg.streaming = false
       isStreaming.value = false
       guardedCommitSync()
@@ -1011,6 +1080,8 @@ export function useChat(
     if (nextSid !== prevSid) {
       sessionStatus.value = null
       streamError.value = null
+      nextCursor.value = null
+      hasMoreMessages.value = false
       resetArtifactState()
     }
 
@@ -1058,14 +1129,18 @@ export function useChat(
   return {
     messages,
     isStreaming,
+    isReconnecting,
     isLoadingMessages,
     streamError,
     sessionStatus,
     turnArtifacts,
     sessionArtifacts,
     latestCompletedTurnId,
+    hasMoreMessages,
+    isLoadingOlderMessages,
     send,
     cancelStream,
+    loadOlderMessages,
   }
 }
 

@@ -1,37 +1,38 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { useI18n } from '../../i18n'
 import { useSettingsStore, BUILTIN_PROVIDERS, FEATURED_PROVIDERS, type ProviderDefinition } from '../../stores/settings'
 import { useCredentialStore } from '../../composables/useCredentialStore'
 import { useKernel } from '../../composables/useKernel'
+import { useSessionStore } from '../../stores/session'
+import { getApiKey, syncAuthToKernel, removeAuthFromKernel } from '../../services/kernelConfig'
 import ApiKeyInput from './ApiKeyInput.vue'
 
 const { t } = useI18n()
 const settings = useSettingsStore()
 const credentialStore = useCredentialStore()
 const kernel = useKernel()
+const sessionStore = useSessionStore()
 
 const showAll = ref(false)
 
-let restartTimer: ReturnType<typeof setTimeout> | null = null
+function onKeySaved(providerId: string, hasKey: boolean) {
+  settings.markProviderKey(providerId, hasKey)
+
+  // Hot-sync to running kernel via SDK auth API — no restart needed.
+  // config.json was already written by ApiKeyInput via setApiKey().
+  if (hasKey) {
+    void getApiKey(providerId).then((key) => {
+      if (key) void syncAuthToKernel(sessionStore.client, providerId, key)
+    })
+  } else {
+    void removeAuthFromKernel(sessionStore.client, providerId)
+  }
+}
 
 function getState(id: string) {
   return settings.providers.find((p) => p.id === id)
-}
-
-function scheduleKernelRestart() {
-  if (restartTimer) clearTimeout(restartTimer)
-  restartTimer = setTimeout(async () => {
-    if (kernel.status.value !== 'running' && kernel.status.value !== 'starting') return
-    try { await kernel.restart() } catch {}
-  }, 250)
-}
-
-function onKeySaved(providerId: string, hasKey: boolean) {
-  const prevHasKey = getState(providerId)?.hasKey ?? false
-  settings.markProviderKey(providerId, hasKey)
-  if (prevHasKey && hasKey) scheduleKernelRestart()
 }
 
 async function onBaseUrlChange(def: ProviderDefinition, e: Event) {
@@ -55,7 +56,7 @@ function getProviderDescription(def: ProviderDefinition): string {
   return def.descriptionKey ? t(def.descriptionKey) : (def.description ?? '')
 }
 
-onBeforeUnmount(() => { if (restartTimer) clearTimeout(restartTimer) })
+
 </script>
 
 <template>

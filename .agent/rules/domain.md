@@ -18,7 +18,7 @@ App.vue → AppShell (Header/Sidebar/Content) → router-view
   RunbooksView: runbookStore (body+steps model, CRUD + JSON persist via read/write_data_file) -> RunbookListItem (progress bar) / RunbookEditor (textarea + step list, zero-markdown editing UX, no block model)
   SettingsView: providers / engine / theme / shortcuts
 
-Kernel: main.rs setup → sidecar `opencode serve --port {random}`
+Kernel: main.rs setup → inject_modality_overrides(config) → sidecar `opencode serve --port {random}`
   env: XDG_{CONFIG,DATA}_HOME={engine} + OPENCODE_CLIENT=desktop + provider_env
   readiness: poll /health (仅 HTTP 2xx)
 
@@ -77,7 +77,8 @@ Data dirs (macOS): ~/Library/Application Support/aldercowork/
 | Tool Lifecycle UI Source | `SkillCard` 两层渲染：completed 工具压缩为 28px 紧凑行，active/failed 保持完整卡片（spinner + badge + timer + expandable I/O） | 完成态工具视觉退后，注意力自动聚焦到正在运行的工具 |
 | Chat Artifact Aggregation | `useChat` 以 turn 为中心聚合多信号文件成果：`file.edited` live 占位、tool `attachments`、回合结束后主动 `session.diff(messageID)` 回填、workspace `file.list` 快照兜底新增/删除、可用时叠加 `file.status()` git delta、`session.get().summary.diffs` 负责历史恢复；`ChatThread` 在 Assistant 消息尾部渲染 `ArtifactBand`，在线程底部渲染可折叠 `ArtifactShelf`。`FileOutcomeCard` 为单行操作型组件（点击用 Tauri shell open 打开文件），不做内联 diff 预览 | 多信号聚合保住即时可见；展示层从展示型卡片重构为操作型 FileRow，聚焦打开文件核心交互 |
 | File-based Settings | `settings.json` 通过 Tauri IPC 读写，`settingsStore` 唯一写入者 | 跨窗口/进程一致 |
-| Provider Config | OpenCode `config.json` 唯一配置源（API Key/Base URL），变更后重启内核生效 | 消除双轨漂移 |
+| Provider Config | OpenCode `config.json` 唯一配置源（API Key/Base URL/Model Modalities），变更后重启内核生效 | 消除双轨漂移 |
+| Modality Compat Layer | `main.rs inject_modality_overrides()` 在启动时向 config.json 注入 `provider.*.models.*.modalities`，覆盖 models.dev 中滞后的能力声明。**仅对 image 有效**——`@ai-sdk/openai-compatible` 的 `convertToOpenAICompatibleChatMessages()` 只支持 `image/*`，对 PDF/audio/video 会抛 `UnsupportedFunctionalityError`。详见 `docs/engine-modality-compat.md` | 双重关卡：Stage1 引擎守卫（config 可控）+ Stage2 SDK 转换（npm 包决定）。声明 provider SDK 不支持的模态会导致运行时崩溃 |
 | Provider UI Shadow State | Settings UI 读取 `settings.json.providers` 的 `hasKey/baseUrl` 作为展示状态；未在启动时从 `config.json` 反向水合 | 读取体验快，但存在“配置真实值与 UI 投影”漂移风险 |
 | Provider Restart Trigger | 默认由 `App.vue` 监听 `settingsStore.providerStates` 快照差异并在 2s 防抖后 `kernel.restart()`；额外在 `SettingsProvider` 对 `hasKey=true→true` 的密钥轮换做定向重启补偿 | 既避免初始化阶段误重启，又覆盖“影子态不变但密钥值已轮换”的漏检场景 |
 | Welcome Overlay Layout | `WelcomeScreen` 采用受视口高度约束的卡片布局：品牌区固定、step body 独立滚动、底部操作区固定；provider 列表使用 auto-fit grid 压缩垂直占用 | provider 注册表是数据驱动且会继续增长，欢迎页必须在“小屏 + 多 provider”下保持完整可达 |

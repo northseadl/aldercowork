@@ -170,7 +170,6 @@ async function reloadWorkflowStoreForProfile() {
 async function reloadProfileBoundState() {
   await refreshPaths()
   await reloadSettingsStore()
-  providerStatesSnapshot = JSON.stringify(settingsStore.providerStates)
   await reloadSessionStoreForProfile()
   resetMarketplaceSkillStoreForProfile()
   resetSkillAuditStoreForProfile()
@@ -278,60 +277,15 @@ watch(settingsLoaded, (loaded) => {
   }
 }, { immediate: true })
 
-// Watch provider settings changes (including key edits) and restart kernel.
-// Uses snapshot diff to ignore init hydration but never miss the first user edit.
-let providerChangeDebounce: ReturnType<typeof setTimeout> | null = null
-let providerStatesSnapshot: string | null = null
-
-watch(
-  settingsLoaded,
-  (loaded) => {
-    if (!loaded) return
-    providerStatesSnapshot = JSON.stringify(settingsStore.providerStates)
-  },
-  { immediate: true },
-)
-
-watch(
-  () => settingsStore.providerStates,
-  (nextStates) => {
-    if (!settingsLoaded.value) return
-
-    const nextSnapshot = JSON.stringify(nextStates)
-
-    // First observed state after boot becomes baseline (no restart).
-    if (providerStatesSnapshot === null) {
-      providerStatesSnapshot = nextSnapshot
-      return
-    }
-
-    // No semantic change.
-    if (nextSnapshot === providerStatesSnapshot) {
-      return
-    }
-
-    providerStatesSnapshot = nextSnapshot
-
-    if (providerChangeDebounce) clearTimeout(providerChangeDebounce)
-    providerChangeDebounce = setTimeout(async () => {
-      if (kernelStatus.value !== 'running' && kernelStatus.value !== 'starting') return
-      try {
-        console.info('[App] Provider settings changed, restarting kernel to reload config')
-        await kernel.restart()
-      } catch (error) {
-        console.warn('[App] Failed to restart kernel after provider change:', error)
-      }
-    }, 2000)
-  },
-  { deep: true },
-)
+// Provider settings (API keys, base URLs) are now hot-synced to the running
+// kernel via client.auth.set() / client.config.update() — no restart needed.
+// Model switching also uses client.config.update() in ModelPicker.
 
 onUnmounted(() => {
   window.removeEventListener(RUNTIME_ERROR_EVENT, handleRuntimeErrorEvent as EventListener)
   window.removeEventListener(PROFILE_CONTEXT_CHANGED_EVENT, handleProfileContextChanged as EventListener)
   uninstallCopyDelegate?.()
   uninstallCopyDelegate = null
-  if (providerChangeDebounce) clearTimeout(providerChangeDebounce)
 })
 
 const { t } = useI18n()

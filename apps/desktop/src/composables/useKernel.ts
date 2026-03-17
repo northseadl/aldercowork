@@ -29,14 +29,14 @@ export interface KernelContext {
 
 export const KERNEL_KEY: InjectionKey<KernelContext> = Symbol('kernel')
 
-const STATUS_POLL_INTERVAL_MS = 3_000
+const STATUS_POLL_INTERVAL_MS = 5_000
 
 /**
  * Create the kernel manager (call once in App.vue, provide via KERNEL_KEY).
  *
  * The Rust backend auto-starts the engine on app launch.
  * This composable listens for 'kernel-started' and 'kernel-error' events
- * from the backend, and polls kernel_status every 3s as a safety net.
+ * from the backend, and polls kernel_status every 5s as a safety net.
  */
 export function createKernel(): KernelContext {
     const status = ref<KernelStatus>('starting')
@@ -169,8 +169,8 @@ export function createKernel(): KernelContext {
     onMounted(() => {
         void setupListeners()
         void pollStatus()
-        // Aggressive polling for first 10s (1s interval), then relax to 3s
-        fastPollHandle = setInterval(() => void pollStatus(), 1_000)
+        // Moderate polling for first 10s (2s interval), then relax to 5s
+        fastPollHandle = setInterval(() => void pollStatus(), 2_000)
         transitionTimer = setTimeout(() => {
             if (fastPollHandle) clearInterval(fastPollHandle)
             fastPollHandle = null

@@ -154,6 +154,10 @@ watch(
 )
 
 onMounted(() => { void scrollToBottom(true) })
+
+defineExpose({
+  conversationEl: conversationRef,
+})
 </script>
 
 <template>

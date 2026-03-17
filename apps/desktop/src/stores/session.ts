@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, markRaw, ref, shallowRef, watch } from 'vue'
 
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client'
 import { withTimeout } from '../services/stream'
@@ -241,7 +241,10 @@ export const useSessionStore = defineStore('session', () => {
   // --- SDK bindings ---
 
   function setClient(c: unknown) {
-    client.value = c as OpencodeClient | null
+    // markRaw prevents Pinia's reactive() from deep-proxying the SDK class,
+    // which would break its internal `this` bindings on namespaced methods.
+    const raw = c as OpencodeClient | null
+    client.value = raw ? markRaw(raw) : null
   }
 
   function normalizeErrorMessage(e: unknown): string {

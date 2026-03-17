@@ -7,10 +7,9 @@ import ArtifactFab from '../components/chat/ArtifactFab.vue'
 import ModelPicker from '../components/chat/ModelPicker.vue'
 import ReferencePopover from '../components/chat/ReferencePopover.vue'
 import ReferenceStrip from '../components/chat/ReferenceStrip.vue'
-import { useChat, useClient, useConfirm, useReference, useToast } from '../composables'
+import { useChat, useConfirm, useReference, useToast } from '../composables'
 import { useKernel } from '../composables/useKernel'
 import { useSessionStore } from '../stores/session'
-import { useWorkspaceStore } from '../stores/workspace'
 import { useI18n } from '../i18n'
 
 import type { ChatThreadMessage } from '../components/chat'
@@ -19,22 +18,19 @@ import type { FileAttachment } from '../stores/session'
 
 const { t } = useI18n()
 const sessionStore = useSessionStore()
-const workspaceStore = useWorkspaceStore()
 const toast = useToast()
 const { confirmPermission } = useConfirm()
 
-const { port: kernelPort, status: kernelStatus, restart: restartKernel } = useKernel()
-// ChatView creates its own SDK client ref for useChat.
-// Why not read from sessionStore.client? The SDK's internal methods use `this` binding,
-// which breaks when the OpencodeClient passes through Pinia's reactive() proxy.
-// App.vue's global client handles sessionStore (session CRUD / ensureActiveSession).
-// This local client handles useChat (SSE streaming / promptAsync).
-const { client: sdkClient } = useClient(kernelPort, computed(() => workspaceStore.activePath))
+const { status: kernelStatus } = useKernel()
+// Use the global SDK client from sessionStore — markRaw() in setClient() prevents
+// Pinia's reactive() from breaking SDK's internal `this` bindings.
+const sdkClient = computed(() => sessionStore.client)
 
 const activeSessionId = computed(() => sessionStore.activeSessionId)
 
 // Model variant (thinking depth) — provided by ModelPicker
 const modelPickerRef = ref<InstanceType<typeof ModelPicker> | null>(null)
+const chatThreadRef = ref<InstanceType<typeof ChatThread> | null>(null)
 const modelVariant = computed(() => modelPickerRef.value?.currentVariant ?? null)
 
 async function resolvePermissionRequest(request: PermissionRequest): Promise<PermissionDecision> {
@@ -44,12 +40,16 @@ async function resolvePermissionRequest(request: PermissionRequest): Promise<Per
 const {
   messages: chatMessages,
   isStreaming,
+  isReconnecting,
   isLoadingMessages,
   streamError,
   turnArtifacts,
   sessionArtifacts,
+  hasMoreMessages,
+  isLoadingOlderMessages,
   send: rawSend,
   cancelStream,
+  loadOlderMessages,
 } = useChat(
   sdkClient,
   activeSessionId,
@@ -67,7 +67,6 @@ const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024 // 20MB
 const MAX_ATTACHMENT_COUNT = 12
 const MAX_IMAGE_ATTACHMENT_COUNT = 6
 const MAX_TOTAL_ATTACHMENT_BYTES = 30 * 1024 * 1024 // 30MB
-const MESSAGE_WINDOW_PAGE_SIZE = 200
 
 const ACCEPTED_MIMES = new Set([
   'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
@@ -118,7 +117,6 @@ function validateAttachmentFile(file: File): string | null {
 }
 
 const pendingAttachments = ref<FileAttachment[]>([])
-const messageWindowPages = ref(1)
 const composeError = ref<string | null>(null)
 const streamErrorSessionId = ref('')
 
@@ -254,19 +252,6 @@ function handleDragOver(e: DragEvent) {
 // RichMessage → ChatThreadMessage mapping
 // ---------------------------------------------------------------------------
 
-const visibleMessageLimit = computed(() => messageWindowPages.value * MESSAGE_WINDOW_PAGE_SIZE)
-
-const windowedMessages = computed(() => {
-  const source = chatMessages.value
-  const limit = visibleMessageLimit.value
-  if (source.length <= limit) return source
-  return source.slice(source.length - limit)
-})
-
-const hiddenMessageCount = computed(() =>
-  Math.max(0, chatMessages.value.length - windowedMessages.value.length),
-)
-
 const visibleStreamError = computed(() => {
   if (composeError.value) return composeError.value
   if (!streamError.value) return null
@@ -274,13 +259,8 @@ const visibleStreamError = computed(() => {
   return streamError.value
 })
 
-function expandMessageWindow() {
-  if (hiddenMessageCount.value <= 0) return
-  messageWindowPages.value += 1
-}
-
 const displayMessages = computed<ChatThreadMessage[]>(() => {
-  return windowedMessages.value.map((msg) => {
+  return chatMessages.value.map((msg) => {
     const textContent = msg.parts
       .filter((p) => p.type === 'text')
       .map((p) => p.text ?? '')
@@ -332,21 +312,26 @@ const {
 } = useReference(sdkClient)
 
 const canSend = computed(() => (inputText.value.trim().length > 0 || pendingAttachments.value.length > 0 || hasReferences.value || hasCommand.value) && !isStreaming.value)
-let modelRestartTimer: ReturnType<typeof setTimeout> | null = null
-
-
 
 function handleModelChanged() {
-  if (modelRestartTimer) clearTimeout(modelRestartTimer)
-  modelRestartTimer = setTimeout(async () => {
-    if (kernelStatus.value !== 'running' && kernelStatus.value !== 'starting') return
+  // Model is hot-updated to kernel via client.config.update() in ModelPicker.
+  // No kernel restart needed. Just cancel active stream if any.
+  if (isStreaming.value) {
     cancelStream()
-    try {
-      await restartKernel()
-    } catch (error: unknown) {
-      toast.error(toErrorMessage(error))
-    }
-  }, 250)
+  }
+}
+
+async function handleLoadMore() {
+  const scrollEl = chatThreadRef.value?.conversationEl as HTMLElement | undefined
+  const prevScrollHeight = scrollEl?.scrollHeight ?? 0
+
+  await loadOlderMessages()
+  await nextTick()
+
+  // Preserve scroll position after prepending older messages
+  if (scrollEl) {
+    scrollEl.scrollTop += scrollEl.scrollHeight - prevScrollHeight
+  }
 }
 
 function clearPendingAttachments() {
@@ -380,19 +365,7 @@ watch(activeSessionId, (next, prev) => {
 
   cancelStream()
   resetComposeState()
-  messageWindowPages.value = 1
 })
-
-watch(
-  () => chatMessages.value.length,
-  (next, prev) => {
-    if (next < prev) {
-      messageWindowPages.value = 1
-    }
-  },
-)
-
-
 
 onBeforeRouteLeave(() => {
   cancelStream()
@@ -400,7 +373,6 @@ onBeforeRouteLeave(() => {
 })
 
 onBeforeUnmount(() => {
-  if (modelRestartTimer) clearTimeout(modelRestartTimer)
   cancelStream()
   resetComposeState()
 })
@@ -408,8 +380,8 @@ onBeforeUnmount(() => {
 // --- Cross-route prompt injection (e.g. runbook → chat) ---
 // When RunbooksView deposits a prompt via sessionStore.setPendingPrompt(),
 // this watcher consumes and dispatches it through the full SSE streaming pipeline.
-// We watch `sdkClient` instead of using onMounted because useClient creates the
-// SDK client asynchronously (watches kernelPort), so it's typically null on mount.
+// We watch `sdkClient` instead of using onMounted because the global client is
+// set asynchronously after kernel ready, so it's typically null on mount.
 watch(
   sdkClient,
   async (client) => {
@@ -615,19 +587,25 @@ function attachmentDisplayName(att: FileAttachment): string {
     </template>
 
     <template v-else>
-      <div v-if="hiddenMessageCount > 0" class="history-window">
+      <div v-if="hasMoreMessages" class="history-window">
         <button
           type="button"
           class="history-window__btn"
-          :aria-label="`${hiddenMessageCount}`"
-          :title="`${hiddenMessageCount}`"
-          @click="expandMessageWindow"
+          :disabled="isLoadingOlderMessages"
+          @click="handleLoadMore"
         >
-          ↑ {{ hiddenMessageCount }}
+          <template v-if="isLoadingOlderMessages">
+            <span class="chat-empty__dot" />
+            {{ t('chat.loadingOlder') }}
+          </template>
+          <template v-else>
+            ↑ {{ t('chat.loadMore') }}
+          </template>
         </button>
       </div>
 
       <ChatThread
+        ref="chatThreadRef"
         :messages="displayMessages"
       >
         <template #compose><div /></template>
@@ -638,8 +616,8 @@ function attachmentDisplayName(att: FileAttachment): string {
     <ArtifactFab :summary="sessionArtifacts" />
 
     <div v-if="isStreaming" class="streaming-indicator">
-      <span class="streaming-dot" />
-      <span class="streaming-label">{{ t('chat.streaming') }}</span>
+      <span class="streaming-dot" :class="{ 'is-reconnecting': isReconnecting }" />
+      <span class="streaming-label">{{ isReconnecting ? t('chat.reconnecting') : t('chat.streaming') }}</span>
     </div>
 
     <div v-if="visibleStreamError" class="stream-error">
@@ -849,6 +827,10 @@ function attachmentDisplayName(att: FileAttachment): string {
   border-radius: var(--r-full);
   background: var(--brand);
   animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.streaming-dot.is-reconnecting {
+  background: var(--color-warning);
 }
 
 .streaming-label {
