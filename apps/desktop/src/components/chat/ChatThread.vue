@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, Transition, watch } from 'vue'
 
-import ArtifactBand from './ArtifactBand.vue'
-import ArtifactShelf from './ArtifactShelf.vue'
 import ChatMessage from './ChatMessage.vue'
 import StreamingMarkdown from './StreamingMarkdown.vue'
 import SkillCard from './SkillCard.vue'
@@ -10,14 +8,12 @@ import SkillCard from './SkillCard.vue'
 import { FileAttachment, PatchDiff, ReasoningBlock, RetryNotice, TokenStats } from './parts'
 
 import { useI18n } from '../../i18n'
-import type { ChatThreadMessage, MessagePart, SessionArtifactSummary, TurnArtifactSummary } from './types'
+import type { ChatThreadMessage, MessagePart } from './types'
 
 const { t } = useI18n()
 
 const props = defineProps<{
   messages: ChatThreadMessage[]
-  turnArtifactsByTurnId?: Record<string, TurnArtifactSummary>
-  sessionArtifactSummary?: SessionArtifactSummary
 }>()
 
 const conversationRef = ref<HTMLElement | null>(null)
@@ -43,7 +39,6 @@ interface FormattedMessage extends ChatThreadMessage {
   hasVisibleActivity: boolean
   /** Model label for display (e.g. "anthropic · claude-sonnet-4-20250514") */
   modelLabel: string | undefined
-  artifactSummary?: TurnArtifactSummary
 }
 
 function classifyPartType(type: string | undefined): VisiblePartType | null {
@@ -90,17 +85,12 @@ const formattedMessages = computed<FormattedMessage[]>(() => {
       visibleParts,
       hasVisibleActivity,
       modelLabel,
-      artifactSummary: props.turnArtifactsByTurnId?.[message.artifactTurnId ?? message.id],
     }
   })
 })
 
 const lastMessage = computed(() => props.messages[props.messages.length - 1] ?? null)
 
-const lastTurnArtifact = computed(() => {
-  const turnId = lastMessage.value?.artifactTurnId
-  return turnId ? props.turnArtifactsByTurnId?.[turnId] ?? null : null
-})
 
 function partRenderSignature(part: MessagePart): string {
   if (part.type === 'text' || part.type === 'reasoning') {
@@ -153,10 +143,6 @@ watch(
   [
     () => props.messages.length,
     () => messageRenderSignature(lastMessage.value),
-    () => lastTurnArtifact.value?.updatedAt ?? '',
-    () => lastTurnArtifact.value?.files.length ?? 0,
-    () => props.sessionArtifactSummary?.files.length ?? 0,
-    () => props.sessionArtifactSummary?.error ?? '',
   ],
   () => { void scrollToBottom() },
 )
@@ -258,11 +244,6 @@ onMounted(() => { void scrollToBottom(true) })
             </div>
           </template>
 
-          <ArtifactBand
-            v-if="message.role === 'ai' && message.artifactSummary && message.artifactSummary.files.length > 0"
-            :summary="message.artifactSummary"
-          />
-
           <!-- Token stats (for assistant messages) -->
           <TokenStats
             v-if="message.role === 'ai' && !message.streaming && (message.tokens || message.cost)"
@@ -271,10 +252,6 @@ onMounted(() => { void scrollToBottom(true) })
           />
         </ChatMessage>
 
-        <ArtifactShelf
-          v-if="props.sessionArtifactSummary && (props.sessionArtifactSummary.files.length > 0 || props.sessionArtifactSummary.error)"
-          :summary="props.sessionArtifactSummary"
-        />
       </div>
     </div>
 

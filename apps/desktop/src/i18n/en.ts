@@ -122,11 +122,15 @@ const en: MessageSchema = {
         artifacts: {
             bandTitle: 'Files from this turn',
             shelfTitle: 'Files from this conversation',
+            fabTitle: 'Files',
+            fabEmpty: 'No file changes in this session',
             filesCount: '{count} file(s)',
             shelfSummary: '{files} files, +{additions} / -{deletions}',
             aggregateError: 'Failed to aggregate file outcomes',
             copyPath: 'Copy path',
             copiedPath: 'Copied',
+            openFile: 'Open file',
+            openInDirectory: 'Show in file manager',
             status: {
                 processing: 'Processing',
                 added: 'Added',

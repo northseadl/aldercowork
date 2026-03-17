@@ -591,7 +591,7 @@ export function useChat(
         : Array.isArray(result.data)
           ? (result.data as Array<Record<string, unknown>>)
           : []
-      messages.value = raw.map(mapRemoteMessage)
+      messages.value = mergeAgenticLoopMessages(raw.map(mapRemoteMessage))
       turnArtifacts.value = {}
       restoredSessionFiles.value = []
       latestCompletedTurnId.value = null
@@ -1072,6 +1072,69 @@ export function useChat(
 // ---------------------------------------------------------------------------
 // Message mapping (session.messages → RichMessage)
 // ---------------------------------------------------------------------------
+
+/**
+ * Merge assistant messages that belong to the same turn (agentic loop).
+ *
+ * During streaming, the consumer accumulates all assistant messages per turn
+ * into a single RichMessage. The backend however stores them as separate
+ * messages. This function reproduces the streaming merge for history-loaded
+ * messages so that the UI shows one continuous assistant response per turn.
+ */
+function mergeAgenticLoopMessages(mapped: RichMessage[]): RichMessage[] {
+  const result: RichMessage[] = []
+
+  for (const msg of mapped) {
+    if (msg.role !== 'assistant' || !msg.parentId) {
+      result.push(msg)
+      continue
+    }
+
+    // Fix turnId to match streaming behaviour (turnId = user message id)
+    msg.turnId = msg.parentId
+
+    const prev = result.length > 0 ? result[result.length - 1] : null
+    if (prev && prev.role === 'assistant' && prev.parentId === msg.parentId) {
+      // Strip synthetic finish notices before merge — they will be re-applied
+      const strip = (parts: MessagePart[]) =>
+        parts.filter((p) => !p.id.startsWith(SYNTHETIC_FINISH_NOTICE_PREFIX))
+
+      prev.parts = [...strip(prev.parts), ...strip(msg.parts)]
+      // Adopt the latest message id (mirrors consumer behaviour)
+      prev.id = msg.id
+      prev.finishReason = msg.finishReason ?? prev.finishReason
+      if (msg.modelInfo) prev.modelInfo = msg.modelInfo
+      if (msg.createdAt) prev.createdAt = msg.createdAt
+
+      // Accumulate tokens
+      if (msg.tokens) {
+        if (prev.tokens) {
+          prev.tokens = {
+            input: prev.tokens.input + msg.tokens.input,
+            output: prev.tokens.output + msg.tokens.output,
+            reasoning: prev.tokens.reasoning + msg.tokens.reasoning,
+            cache: {
+              read: prev.tokens.cache.read + msg.tokens.cache.read,
+              write: prev.tokens.cache.write + msg.tokens.cache.write,
+            },
+          }
+        } else {
+          prev.tokens = { ...msg.tokens, cache: { ...msg.tokens.cache } }
+        }
+      }
+      if (msg.cost !== undefined) {
+        prev.cost = (prev.cost ?? 0) + msg.cost
+      }
+
+      // Re-apply finish notice on the merged message
+      ensureAssistantCompletionNotice(prev)
+    } else {
+      result.push(msg)
+    }
+  }
+
+  return result
+}
 
 function mapRemoteMessage(raw: Record<string, unknown>): RichMessage {
   const info = (raw.info ?? raw) as Record<string, unknown>

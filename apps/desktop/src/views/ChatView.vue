@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 
 import { ChatThread } from '../components/chat'
+import ArtifactFab from '../components/chat/ArtifactFab.vue'
 import ModelPicker from '../components/chat/ModelPicker.vue'
 import ReferencePopover from '../components/chat/ReferencePopover.vue'
 import ReferenceStrip from '../components/chat/ReferenceStrip.vue'
@@ -615,12 +616,13 @@ function attachmentDisplayName(att: FileAttachment): string {
 
       <ChatThread
         :messages="displayMessages"
-        :turn-artifacts-by-turn-id="turnArtifacts"
-        :session-artifact-summary="sessionArtifacts"
       >
         <template #compose><div /></template>
       </ChatThread>
     </template>
+
+    <!-- Artifact FAB — floating icon + panel for session file outcomes -->
+    <ArtifactFab :summary="sessionArtifacts" />
 
     <div v-if="isStreaming" class="streaming-indicator">
       <span class="streaming-dot" />
@@ -758,6 +760,7 @@ function attachmentDisplayName(att: FileAttachment): string {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .chat-empty {

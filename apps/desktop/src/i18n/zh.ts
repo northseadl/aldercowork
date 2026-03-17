@@ -123,11 +123,15 @@ const zh = {
         artifacts: {
             bandTitle: '本轮生成的文件',
             shelfTitle: '本次对话生成的文件',
+            fabTitle: '文件产出',
+            fabEmpty: '本次对话暂无文件变更',
             filesCount: '{count} 个文件',
             shelfSummary: '共 {files} 个文件，新增 {additions}，减少 {deletions}',
             aggregateError: '文件成果聚合失败',
             copyPath: '复制路径',
             copiedPath: '已复制',
+            openFile: '打开文件',
+            openInDirectory: '在文件管理器中显示',
             status: {
                 processing: '处理中',
                 added: '新增',
