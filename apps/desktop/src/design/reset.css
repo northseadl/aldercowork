@@ -33,12 +33,13 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: transparent;
+    background: rgba(128, 128, 128, .08);
     border-radius: 3px;
+    transition: background 0.15s;
   }
 
-  *:hover> ::-webkit-scrollbar-thumb {
-    background: rgba(128, 128, 128, .2);
+  *:hover > ::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, .25);
   }
 
   button {

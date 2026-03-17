@@ -37,12 +37,16 @@ const props = defineProps<{
   gap: calc(var(--sp) * 1.5);
 }
 
+/* Separate turns with extra breathing room */
+.entry + .entry { margin-top: calc(var(--sp) * 0.5); }
+
 /* AI messages get a subtle card-like treatment for clear role separation */
 .entry.ai {
   background: var(--surface-card);
   border-radius: var(--r-lg);
   padding: calc(var(--sp) * 2.5) calc(var(--sp) * 2);
-  margin: calc(var(--sp) * 0.5) calc(var(--sp) * -2);
+  margin-left: calc(var(--sp) * -2);
+  margin-right: calc(var(--sp) * -2);
 }
 
 .entry-content {

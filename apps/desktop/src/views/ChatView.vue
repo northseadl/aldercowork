@@ -551,6 +551,19 @@ function handleRefSelect(candidate: import('../composables/useReference').Refere
   composeRef.value?.focus()
 }
 
+/** Insert `@` into the textarea and open the reference popover */
+function handleAtButtonClick() {
+  const textarea = composeRef.value
+  if (!textarea) return
+  const pos = textarea.selectionStart ?? inputText.value.length
+  inputText.value = inputText.value.slice(0, pos) + '@' + inputText.value.slice(pos)
+  nextTick(() => {
+    textarea.focus()
+    textarea.selectionStart = textarea.selectionEnd = pos + 1
+    detectAtTrigger()
+  })
+}
+
 
 function formatTime(iso: string): string {
   try {
@@ -697,7 +710,7 @@ function attachmentDisplayName(att: FileAttachment): string {
               class="omnibar-tool-btn"
               :title="t('chat.reference.addReference')"
               :disabled="kernelStatus !== 'running'"
-              @click="openRefPopover('')"
+              @click="handleAtButtonClick"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="4" />
@@ -891,7 +904,7 @@ function attachmentDisplayName(att: FileAttachment): string {
 }
 
 .compose {
-  padding: calc(var(--sp) * 2) calc(var(--sp) * 4) calc(var(--sp) * 3);
+  padding: calc(var(--sp) * 1) calc(var(--sp) * 4) calc(var(--sp) * 1);
 }
 
 .omnibar {
@@ -1069,7 +1082,7 @@ function attachmentDisplayName(att: FileAttachment): string {
   text-align: center;
   font-size: var(--text-micro);
   color: var(--text-3);
-  padding-top: var(--sp);
+  padding: 4px 0 2px;
   max-width: 680px;
   margin: 0 auto;
 }

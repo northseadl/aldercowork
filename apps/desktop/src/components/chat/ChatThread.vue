@@ -76,9 +76,7 @@ const formattedMessages = computed<FormattedMessage[]>(() => {
       visibleParts.push(vp)
     }
 
-    const modelLabel = message.modelInfo
-      ? `${message.modelInfo.providerID} · ${message.modelInfo.modelID}`
-      : undefined
+    const modelLabel = message.modelInfo?.modelID
 
     return {
       ...message,
@@ -90,6 +88,14 @@ const formattedMessages = computed<FormattedMessage[]>(() => {
 })
 
 const lastMessage = computed(() => props.messages[props.messages.length - 1] ?? null)
+
+/** Index of the last AI message — token stats are only shown on this message */
+const lastAiMessageIndex = computed(() => {
+  for (let i = formattedMessages.value.length - 1; i >= 0; i--) {
+    if (formattedMessages.value[i].role === 'ai') return i
+  }
+  return -1
+})
 
 
 function partRenderSignature(part: MessagePart): string {
@@ -155,7 +161,7 @@ onMounted(() => { void scrollToBottom(true) })
     <div ref="conversationRef" class="conversation" @scroll="handleScroll">
       <div class="thread">
         <ChatMessage
-          v-for="message in formattedMessages"
+          v-for="(message, msgIdx) in formattedMessages"
           :key="message.id"
           :role="message.role"
           :author="message.author"
@@ -244,9 +250,9 @@ onMounted(() => { void scrollToBottom(true) })
             </div>
           </template>
 
-          <!-- Token stats (for assistant messages) -->
+          <!-- Token stats — cumulative, only on last assistant message -->
           <TokenStats
-            v-if="message.role === 'ai' && !message.streaming && (message.tokens || message.cost)"
+            v-if="message.role === 'ai' && !message.streaming && (message.tokens || message.cost) && msgIdx === lastAiMessageIndex"
             :tokens="message.tokens"
             :cost="message.cost"
           />
@@ -396,10 +402,9 @@ onMounted(() => { void scrollToBottom(true) })
 .scroll-to-bottom {
   position: absolute;
   bottom: 80px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 36px;
-  height: 36px;
+  right: 24px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--surface-card);
@@ -427,6 +432,6 @@ onMounted(() => { void scrollToBottom(true) })
 .fab-fade-enter-from,
 .fab-fade-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(8px);
+  transform: translateY(6px);
 }
 </style>

@@ -76,6 +76,15 @@ function handleContextMenu(event: MouseEvent, file: FileOutcome) {
   ctxMenu.value = { x: event.clientX, y: event.clientY, file }
 }
 
+function handleKeyboardContextMenu(event: KeyboardEvent, file: FileOutcome) {
+  if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+    event.preventDefault()
+    const el = event.currentTarget as HTMLElement
+    const rect = el.getBoundingClientRect()
+    ctxMenu.value = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, file }
+  }
+}
+
 function closeContextMenu() {
   ctxMenu.value = null
 }
@@ -177,9 +186,10 @@ function statusDotClass(file: FileOutcome): string {
           :title="file.path"
           @click="openFile(file)"
           @keydown.enter.prevent="openFile(file)"
+          @keydown="handleKeyboardContextMenu($event, file)"
           @contextmenu="handleContextMenu($event, file)"
         >
-          <span class="af-item__dot" :class="statusDotClass(file)" />
+          <span class="af-item__status" :class="statusDotClass(file)" />
           <!-- File type icon -->
           <svg v-if="fileIconClass(file) === 'code'" class="af-item__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" />
@@ -395,16 +405,48 @@ function statusDotClass(file: FileOutcome): string {
 .af-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .af-item--disabled { opacity: 0.5; cursor: default; }
 
-.af-item__dot {
-  width: 5px;
-  height: 5px;
-  border-radius: var(--r-full);
+/* Status markers — shape-differentiated for colorblind accessibility */
+.af-item__status {
+  width: 6px;
+  height: 6px;
   flex-shrink: 0;
 }
-.af-item__dot.is-processing { background: var(--text-3); }
-.af-item__dot.is-added { background: var(--color-success); }
-.af-item__dot.is-modified { background: var(--color-warning); }
-.af-item__dot.is-deleted { background: var(--color-error); }
+
+/* Processing: hollow circle (ring) */
+.af-item__status.is-processing {
+  border-radius: var(--r-full);
+  border: 1.5px solid var(--text-3);
+  background: transparent;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* Added: filled circle */
+.af-item__status.is-added {
+  border-radius: var(--r-full);
+  background: var(--color-success);
+}
+
+/* Modified: diamond (rotated square) */
+.af-item__status.is-modified {
+  width: 6px;
+  height: 6px;
+  background: var(--color-warning);
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
+/* Deleted: horizontal dash */
+.af-item__status.is-deleted {
+  width: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-error);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
 
 .af-item__icon {
   flex-shrink: 0;
@@ -476,8 +518,8 @@ function statusDotClass(file: FileOutcome): string {
 .panel-slide-enter-from { opacity: 0; transform: translateY(8px); }
 .panel-slide-leave-to { opacity: 0; transform: translateY(8px); }
 
-.ctx-fade-enter-active { transition: opacity 0.1s; }
-.ctx-fade-leave-active { transition: opacity 0.08s; }
+.ctx-fade-enter-active { transition: opacity 0.1s var(--ease); }
+.ctx-fade-leave-active { transition: opacity 0.08s var(--ease); }
 .ctx-fade-enter-from,
 .ctx-fade-leave-to { opacity: 0; }
 </style>

@@ -54,13 +54,16 @@ const currentModel = ref<{ providerID: string; modelID: string } | null>(null)
 /** Currently selected variant (thinking depth) */
 const currentVariant = ref<string | null>(null)
 
+/** Expanded provider groups — only the active provider is expanded by default */
+const expandedProviders = ref(new Set<string>())
+
 // ---------------------------------------------------------------------------
 // Computed
 // ---------------------------------------------------------------------------
 
 const displayLabel = computed(() => {
   if (!currentModel.value) return t('chat.modelPicker.selectModel')
-  return `${currentModel.value.providerID} · ${currentModel.value.modelID}`
+  return currentModel.value.modelID
 })
 
 /** Available variants for the currently selected model */
@@ -186,7 +189,16 @@ function togglePopover() {
     return
   }
   isOpen.value = true
+  // Ensure only the active provider is expanded
+  expandedProviders.value = new Set(currentModel.value ? [currentModel.value.providerID] : [])
   void fetchProviders()
+}
+
+function toggleProviderGroup(providerId: string) {
+  const next = new Set(expandedProviders.value)
+  if (next.has(providerId)) next.delete(providerId)
+  else next.add(providerId)
+  expandedProviders.value = next
 }
 
 function handleKeydown(e: KeyboardEvent) {
@@ -275,28 +287,39 @@ defineExpose({ currentVariant, currentModel })
 
         <template v-else>
           <div v-for="provider in connectedProviders" :key="provider.id" class="mp-group">
-            <div class="mp-group-header">
-              <span class="mp-group-dot" />
-              <span class="mp-group-name">{{ provider.name }}</span>
-            </div>
             <button
-              v-for="model in provider.models"
-              :key="model.id"
               type="button"
-              class="mp-option"
-              :class="{ 'is-selected': currentModel?.providerID === provider.id && currentModel?.modelID === model.id }"
-              @click="selectModel(provider.id, model.id)"
+              class="mp-group-header"
+              :class="{ 'is-expanded': expandedProviders.has(provider.id) }"
+              @click="toggleProviderGroup(provider.id)"
             >
-              <span class="mp-option-label">{{ model.name }}</span>
-              <span v-if="model.id === provider.defaultModelId" class="mp-option-badge">{{ t('chat.modelPicker.defaultBadge') }}</span>
-              <svg
-                v-if="currentModel?.providerID === provider.id && currentModel?.modelID === model.id"
-                class="mp-option-check"
-                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-              >
-                <polyline points="20 6 9 17 4 12" />
+              <span class="mp-group-dot" :class="{ 'is-active': currentModel?.providerID === provider.id }" />
+              <span class="mp-group-name">{{ provider.name }}</span>
+              <span class="mp-group-count">{{ provider.models.length }}</span>
+              <svg class="mp-group-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9" />
               </svg>
             </button>
+            <template v-if="expandedProviders.has(provider.id)">
+              <button
+                v-for="model in provider.models"
+                :key="model.id"
+                type="button"
+                class="mp-option"
+                :class="{ 'is-selected': currentModel?.providerID === provider.id && currentModel?.modelID === model.id }"
+                @click="selectModel(provider.id, model.id)"
+              >
+                <span class="mp-option-label">{{ model.name }}</span>
+                <span v-if="model.id === provider.defaultModelId" class="mp-option-badge">{{ t('chat.modelPicker.defaultBadge') }}</span>
+                <svg
+                  v-if="currentModel?.providerID === provider.id && currentModel?.modelID === model.id"
+                  class="mp-option-check"
+                  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+                >
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </button>
+            </template>
           </div>
         </template>
       </div>
@@ -441,19 +464,34 @@ defineExpose({ currentVariant, currentModel })
 }
 
 .mp-group-header {
+  width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px 4px;
+  padding: 7px 12px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background var(--speed-quick);
+}
+
+.mp-group-header:hover {
+  background: var(--surface-hover);
 }
 
 .mp-group-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: var(--r-full);
+  background: var(--text-3);
+  flex-shrink: 0;
+  transition: background var(--speed-quick);
+}
+
+.mp-group-dot.is-active {
   background: var(--brand);
   box-shadow: 0 0 6px color-mix(in srgb, var(--brand) 50%, transparent);
-  flex-shrink: 0;
 }
 
 .mp-group-name {
@@ -461,6 +499,26 @@ defineExpose({ currentVariant, currentModel })
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: .04em;
+  flex: 1;
+  text-align: left;
+}
+
+.mp-group-count {
+  font: var(--text-micro) / 1 var(--font-mono);
+  color: var(--text-3);
+}
+
+.mp-group-chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--text-3);
+  flex-shrink: 0;
+  transition: transform var(--speed-quick) var(--ease);
+  transform: rotate(-90deg);
+}
+
+.mp-group-header.is-expanded .mp-group-chevron {
+  transform: rotate(0deg);
 }
 
 /* Model option */

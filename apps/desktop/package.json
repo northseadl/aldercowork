@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@aldercowork/skill-schema": "workspace:*",
-    "@opencode-ai/sdk": "^1.2.15",
+    "@opencode-ai/sdk": "^1.2.27",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-http": "^2.5.7",
     "@tauri-apps/plugin-process": "^2.3.1",
